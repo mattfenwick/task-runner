@@ -62,6 +62,7 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 	for _, t := range taskOrder {
 		taskStates[t.TaskName()] = SimpleTaskRunnerTaskStateWaiting
 	}
+	log.Infof("task states: %+v", taskStates)
 
 	if runAllPrereqsImmediately {
 		log.Infof("running %d prereqs immediately", len(prereqs))

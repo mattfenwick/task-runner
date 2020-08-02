@@ -22,9 +22,6 @@ func PrintTask(s string, deps ...Task) Task {
 // If the key is already set, it returns an error.
 // The purpose of this Task is to track whether it's been executed or not,
 // and to enforce that it is not executed more than once.
-// TODO should there be a Prereq that key is not present in the map?
-//   Or should isDone just return dict[key] ?
-//   A: no and no, b/c this is a special case for testing
 func SetKeyTask(name string, key string, dict map[string]bool, deps ...Task) Task {
 	isDone := false
 	return NewFunctionTask(fmt.Sprintf("task-setkey-%s", name), func() error {
@@ -35,6 +32,30 @@ func SetKeyTask(name string, key string, dict map[string]bool, deps ...Task) Tas
 		isDone = true
 		return nil
 	}, deps, []Prereq{}, func() (b bool, err error) {
+		return isDone, nil
+	})
+}
+
+// SetKeyTaskPrereq is similar to SetKeyTask, but moves the 'key is already set?' check
+// into a prereq.
+func SetKeyTaskPrereq(name string, key string, dict map[string]bool, deps ...Task) Task {
+	isDone := false
+	taskName := fmt.Sprintf("task-setkey-%s", name)
+	return NewFunctionTask(taskName, func() error {
+		dict[key] = true
+		isDone = true
+		return nil
+	}, deps, []Prereq{
+		&FunctionPrereq{
+			Name: fmt.Sprintf("prereq-keycheck-%s", taskName),
+			Run: func() error {
+				if _, ok := dict[key]; ok {
+					return errors.Errorf("key %s already in dict", key)
+				}
+				return nil
+			},
+		},
+	}, func() (b bool, err error) {
 		return isDone, nil
 	})
 }
