@@ -58,7 +58,7 @@ func RunTaskRunnerTests() {
 		It("runs each not-done task exactly once", func() {
 			dict, t := setKeyOnceGraph()
 
-			err := (&SimpleTaskRunner{}).TaskRunnerRun(t)
+			_, err := (&SimpleTaskRunner{}).TaskRunnerRun(t, false)
 			Expect(err).To(Succeed())
 
 			for _, s := range []string{"a", "b", "c", "d", "e"} {
@@ -69,7 +69,7 @@ func RunTaskRunnerTests() {
 		It("skips tasks that are already done", func() {
 			dict, tasks, rootTask := setKeyCountGraph()
 
-			err := (&SimpleTaskRunner{}).TaskRunnerRun(rootTask)
+			_, err := (&SimpleTaskRunner{}).TaskRunnerRun(rootTask, false)
 			Expect(err).To(Succeed())
 
 			for _, s := range []string{"a", "b", "c", "d"} {
@@ -90,7 +90,7 @@ func RunTaskRunnerTests() {
 			It("fails to execute tasks whose deps fail", func() {
 				dict, t := setKeyTwiceGraph()
 
-				err := (&SimpleTaskRunner{}).TaskRunnerRun(t)
+				_, err := (&SimpleTaskRunner{}).TaskRunnerRun(t, false)
 				Expect(err).NotTo(Succeed())
 				Expect(err.Error()).To(MatchRegexp("failed to run task task-setkey-d: key d already in dict"))
 

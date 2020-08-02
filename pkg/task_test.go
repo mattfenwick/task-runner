@@ -50,30 +50,34 @@ func RunTaskTests() {
 	Describe("Task", func() {
 		Describe("linearize", func() {
 			It("linearize", func() {
-				tasks, err := TaskLinearize(validDAG())
+				tasks, prereqs, err := TaskLinearize(validDAG())
 				Expect(err).To(Succeed())
 				Expect(taskNames(tasks)).To(Equal([]string{"task-print-e", "task-print-c", "task-print-d", "task-print-b", "task-print-a"}))
+				Expect(prereqs).To(BeNil())
 			})
 
 			It("rejects trivial cycles", func() {
-				tasks, err := TaskLinearize(graphWithTrivialCycle())
+				tasks, prereqs, err := TaskLinearize(graphWithTrivialCycle())
 				Expect(err).NotTo(Succeed())
 				Expect(err.Error()).To(MatchRegexp("cycle"))
 				Expect(tasks).To(BeNil())
+				Expect(prereqs).To(BeNil())
 			})
 
 			It("rejects non-trivial cycles", func() {
-				tasks, err := TaskLinearize(graphWithCycle())
+				tasks, prereqs, err := TaskLinearize(graphWithCycle())
 				Expect(err).NotTo(Succeed())
 				Expect(err.Error()).To(MatchRegexp("cycle"))
 				Expect(tasks).To(BeNil())
+				Expect(prereqs).To(BeNil())
 			})
 
 			It("rejects duplicate task names", func() {
-				tasks, err := TaskLinearize(graphWithDupe())
+				tasks, prereqs, err := TaskLinearize(graphWithDupe())
 				Expect(err).NotTo(Succeed())
 				Expect(err.Error()).To(MatchRegexp("duplicate"))
 				Expect(tasks).To(BeNil())
+				Expect(prereqs).To(BeNil())
 			})
 		})
 	})

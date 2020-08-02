@@ -80,40 +80,47 @@ func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress
 	return append(traversal, task), nil
 }
 
-// TODO also grab all prereqs and stick them into a slice at the same time
-func TaskLinearize(task Task) ([]Task, error) {
+func TaskLinearize(task Task) ([]Task, []Prereq, error) {
 	traversal := []Task{}
 	done := map[string]bool{}
 	inProgress := map[string]bool{}
 	taskNamesToIds := map[string]string{}
-	return linearizeHelp(task, traversal, done, inProgress, nil, taskNamesToIds)
+	taskOrder, err := linearizeHelp(task, traversal, done, inProgress, nil, taskNamesToIds)
+	if err != nil {
+		return nil, nil, err
+	}
+	prereqs, err := gatherPrereqs(taskOrder)
+	if err != nil {
+		return nil, nil, err
+	}
+	return taskOrder, prereqs, nil
 }
 
-func traverseHelp(t Task, indent int) {
-	fmt.Printf("%s: %s - %p, %p\n", t.TaskName(), strings.Repeat(" ", indent*2), t, &t)
-	for _, dep := range t.TaskDependencies() {
-		traverseHelp(dep, indent+1)
+func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
+	f(currentTask, depth)
+	for _, dep := range currentTask.TaskDependencies() {
+		traverseHelp(dep, depth+1, f)
 	}
 }
 
-func TaskDebugPrint(t Task) {
-	traverseHelp(t, 0)
+func TaskTraverse(t Task, f func(Task, int)) {
+	traverseHelp(t, 0, f)
+}
+
+func TaskDebugPrint(rootTask Task) {
+	TaskTraverse(rootTask, func(currentTask Task, level int) {
+		fmt.Printf("%s%s: %p, %p\n", strings.Repeat(" ", level*2), currentTask.TaskName(), currentTask, &currentTask)
+	})
 }
 
 func ObjectId(o interface{}) string {
 	return fmt.Sprintf("%p", o)
 }
 
-// TaskPrereqs gathers up all the prereqs of a task graph, returning an error if a name is detected
-//   for multiple different prereqs.
-func TaskPrereqs(t Task) ([]Prereq, error) {
-	taskOrder, err := TaskLinearize(t)
-	if err != nil {
-		return nil, err
-	}
+func gatherPrereqs(tasks []Task) ([]Prereq, error) {
 	prereqNameToId := map[string]string{}
 	var prereqs []Prereq
-	for _, task := range taskOrder {
+	for _, task := range tasks {
 		for _, prereq := range task.TaskPrereqs() {
 			name := prereq.PrereqName()
 			newId := ObjectId(prereq)
