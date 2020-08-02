@@ -38,12 +38,20 @@ func graphWithDupe() Task {
 			PrintTask("e")))
 }
 
+func taskNames(tasks []Task) []string {
+	names := make([]string, len(tasks))
+	for i, t := range tasks {
+		names[i] = t.TaskName()
+	}
+	return names
+}
+
 func RunTaskRunnerTests() {
 	Describe("TaskRunner", func() {
 		It("linearize", func() {
 			tasks, err := (&TaskRunner{Task: validDAG()}).LinearizeTasks()
 			Expect(err).To(Succeed())
-			Expect(tasks).To(Equal([]string{"e", "c", "d", "b", "a"}))
+			Expect(taskNames(tasks)).To(Equal([]string{"e", "c", "d", "b", "a"}))
 		})
 
 		It("rejects trivial cycles", func() {

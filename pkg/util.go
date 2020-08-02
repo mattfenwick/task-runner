@@ -29,7 +29,9 @@ func SetCommandDirectoryIfNotSet(cmd *exec.Cmd) error {
 }
 
 func AddEnvironmentToCommand(cmd *exec.Cmd, env map[string]string) {
-	cmd.Env = os.Environ()
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
 	for key, val := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, val))
 	}
