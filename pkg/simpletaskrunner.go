@@ -135,3 +135,99 @@ func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskR
 	taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateComplete
 	return nil
 }
+
+func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress map[string]bool, stack []string, taskNamesToIds map[string]string) ([]Task, error) {
+	log.Debugf("stack: %+v", stack)
+	log.Debugf("ids: %+v", taskNamesToIds)
+
+	name := task.TaskName()
+
+	// Let's make sure we don't have multiple tasks of the same name.
+	//   We'll use the addresses of objects as a unique key.
+	//   Whenever we see a name for the first time, we store its address.
+	//   Every time thereafter we see that name, we make sure the task address matches that which we stored.
+	//   If we see a single name with multiple address, then we have a problem.
+	id := ObjectId(task)
+	prevId, ok := taskNamesToIds[name]
+	if !ok {
+		taskNamesToIds[name] = id
+	} else if id != prevId {
+		return nil, errors.Errorf("duplicate task name %s detected, ids %s and %s", name, id, prevId)
+	}
+
+	// An example where this would happen:
+	//   a -> b
+	//   b -> c
+	//   a -> c
+	//   Since a and b both depend on c, we'll traverse c twice.  The first time c is hit, we need to process it.
+	//   Subsequent times, just ignore it.  Note: this doesn't mean there's a cycle.
+	log.Debugf("handling %s\n", name)
+	if done[name] {
+		log.Debugf("bailing on %s\n", name)
+		return traversal, nil
+	}
+
+	// If we come across a task that we're already processing, then we have a cycle.
+	if inProgress[name] {
+		return nil, errors.Errorf("cycle detected -- stack %+v, next %s", stack, name)
+	}
+
+	// Okay, let's process this task.
+	//   We'll add it to our in-progress tasks set for cycle detection, and add it to our
+	//   in-progress tasks stack for debugging and error messages.
+	inProgress[name] = true
+	stack = append(stack, name)
+
+	for _, t := range task.TaskDependencies() {
+		var err error
+		traversal, err = linearizeHelp(t, traversal, done, inProgress, stack, taskNamesToIds)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Clean up the record of this task.  It's no longer in-progress, and it's done.
+	//   There's no need to pop `stack` due to go's slice semantics.
+	delete(inProgress, name)
+	done[name] = true
+
+	// A task can be run after all its dependencies have run, so we'll just append it to the traversal.
+	return append(traversal, task), nil
+}
+
+func TaskLinearize(task Task) ([]Task, []Prereq, error) {
+	traversal := []Task{}
+	done := map[string]bool{}
+	inProgress := map[string]bool{}
+	taskNamesToIds := map[string]string{}
+	taskOrder, err := linearizeHelp(task, traversal, done, inProgress, nil, taskNamesToIds)
+	if err != nil {
+		return nil, nil, err
+	}
+	prereqs, err := gatherPrereqs(taskOrder)
+	if err != nil {
+		return nil, nil, err
+	}
+	return taskOrder, prereqs, nil
+}
+
+func gatherPrereqs(tasks []Task) ([]Prereq, error) {
+	prereqNameToId := map[string]string{}
+	var prereqs []Prereq
+	for _, task := range tasks {
+		for _, prereq := range task.TaskPrereqs() {
+			name := prereq.PrereqName()
+			newId := ObjectId(prereq)
+			if oldId, ok := prereqNameToId[name]; ok {
+				if newId != oldId {
+					return nil, errors.Errorf("duplicate prereq name %s for ids %s and %s", name, newId, oldId)
+				}
+				// otherwise: we've already seen this prereq, but it's okay so just don't add it to `prereqs` again
+			} else {
+				prereqNameToId[name] = newId
+				prereqs = append(prereqs, prereq)
+			}
+		}
+	}
+	return prereqs, nil
+}

@@ -8,6 +8,10 @@ import (
 	"os/exec"
 )
 
+func ObjectId(o interface{}) string {
+	return fmt.Sprintf("%p", o)
+}
+
 func RunCommand(cmd *exec.Cmd) (string, error) {
 	log.Infof("running command '%s' in directory: '%s'", cmd.String(), cmd.Dir)
 	cmdOutput, err := cmd.CombinedOutput()
