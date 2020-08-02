@@ -32,7 +32,7 @@ func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress
 	//   Whenever we see a name for the first time, we store its address.
 	//   Every time thereafter we see that name, we make sure the task address matches that which we stored.
 	//   If we see a single name with multiple address, then we have a problem.
-	id := fmt.Sprintf("%p", task)
+	id := ObjectId(task)
 	prevId, ok := taskNamesToIds[name]
 	if !ok {
 		taskNamesToIds[name] = id
@@ -103,6 +103,8 @@ func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
 	}
 }
 
+// TaskTraverse executes a preorder DFS of the task graph.
+//   TODO add support for dupe/cycle detection?
 func TaskTraverse(t Task, f func(Task, int)) {
 	traverseHelp(t, 0, f)
 }

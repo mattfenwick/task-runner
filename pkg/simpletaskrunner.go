@@ -80,49 +80,57 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 	}
 
 	for _, task := range taskOrder {
-		// If a task is already done, then don't run it.
-		isDone, err := task.TaskIsDone()
+		err = tr.runTask(task, taskStates)
 		if err != nil {
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
 			return taskStates, err
 		}
-		if isDone {
-			log.Infof("skipping task %s, already done", task.TaskName())
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateSkipped
-			continue
-		}
-
-		// Make sure all the prerequisites for a task are met.
-		for _, p := range task.TaskPrereqs() {
-			log.Infof("checking prereq %s of task %s", p.PrereqName(), task.TaskName())
-			if err := p.PrereqRun(); err != nil {
-				taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-				return taskStates, errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), task.TaskName())
-			}
-			log.Infof("prereq %s of task %s is good to go", p.PrereqName(), task.TaskName())
-		}
-
-		// Actually run the task.
-		log.Infof("running task %s", task.TaskName())
-		err = task.TaskRun()
-		if err != nil {
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-			return taskStates, errors.WithMessagef(err, "failed to run task %s", task.TaskName())
-		}
-		log.Infof("finished running task %s", task.TaskName())
-
-		// After running a task, make sure that it considers itself to be done.
-		isDone, err = task.TaskIsDone()
-		if err != nil {
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-			return taskStates, errors.WithMessagef(err, "task %s failed post-execution IsDone check", task.TaskName())
-		}
-		if !isDone {
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-			return taskStates, errors.Errorf("ran task %s but it still reports itself as not done", task.TaskName())
-		}
-
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateComplete
 	}
 	return taskStates, nil
+}
+
+func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskRunnerTaskState) error {
+	// If a task is already done, then don't run it.
+	isDone, err := task.TaskIsDone()
+	if err != nil {
+		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
+		return err
+	}
+	if isDone {
+		log.Infof("skipping task %s, already done", task.TaskName())
+		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateSkipped
+		return nil
+	}
+
+	// Make sure all the prerequisites for a task are met.
+	for _, p := range task.TaskPrereqs() {
+		log.Infof("checking prereq %s of task %s", p.PrereqName(), task.TaskName())
+		if err := p.PrereqRun(); err != nil {
+			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
+			return errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), task.TaskName())
+		}
+		log.Infof("prereq %s of task %s is good to go", p.PrereqName(), task.TaskName())
+	}
+
+	// Actually run the task.
+	log.Infof("running task %s", task.TaskName())
+	err = task.TaskRun()
+	if err != nil {
+		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
+		return errors.WithMessagef(err, "failed to run task %s", task.TaskName())
+	}
+	log.Infof("finished running task %s", task.TaskName())
+
+	// After running a task, make sure that it considers itself to be done.
+	isDone, err = task.TaskIsDone()
+	if err != nil {
+		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
+		return errors.WithMessagef(err, "task %s failed post-execution IsDone check", task.TaskName())
+	}
+	if !isDone {
+		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
+		return errors.Errorf("ran task %s but it still reports itself as not done", task.TaskName())
+	}
+
+	taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateComplete
+	return nil
 }
