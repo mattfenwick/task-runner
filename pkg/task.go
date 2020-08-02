@@ -2,6 +2,8 @@ package pkg
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
 )
@@ -19,8 +21,72 @@ type Task interface {
 	TaskAddDependency(dep Task)
 }
 
-func TaskTraverse(t Task) {
-	traverseHelp(t, 0)
+func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress map[string]bool, stack []string, taskNamesToIds map[string]string) ([]Task, error) {
+	log.Debugf("stack: %+v", stack)
+	log.Debugf("ids: %+v", taskNamesToIds)
+
+	name := task.TaskName()
+
+	// Let's make sure we don't have multiple tasks of the same name.
+	//   We'll use the addresses of objects as a unique key.
+	//   Whenever we see a name for the first time, we store its address.
+	//   Every time thereafter we see that name, we make sure the task address matches that which we stored.
+	//   If we see a single name with multiple address, then we have a problem.
+	id := fmt.Sprintf("%p", task)
+	prevId, ok := taskNamesToIds[name]
+	if !ok {
+		taskNamesToIds[name] = id
+	} else if id != prevId {
+		return nil, errors.Errorf("duplicate task name %s detected, ids %s and %s", name, id, prevId)
+	}
+
+	// An example where this would happen:
+	//   a -> b
+	//   b -> c
+	//   a -> c
+	//   Since a and b both depend on c, we'll traverse c twice.  The first time c is hit, we need to process it.
+	//   Subsequent times, just ignore it.  Note: this doesn't mean there's a cycle.
+	log.Debugf("handling %s\n", name)
+	if done[name] {
+		log.Debugf("bailing on %s\n", name)
+		return traversal, nil
+	}
+
+	// If we come across a task that we're already processing, then we have a cycle.
+	if inProgress[name] {
+		return nil, errors.Errorf("cycle detected -- stack %+v, next %s", stack, name)
+	}
+
+	// Okay, let's process this task.
+	//   We'll add it to our in-progress tasks set for cycle detection, and add it to our
+	//   in-progress tasks stack for debugging and error messages.
+	inProgress[name] = true
+	stack = append(stack, name)
+
+	for _, t := range task.TaskDependencies() {
+		var err error
+		traversal, err = linearizeHelp(t, traversal, done, inProgress, stack, taskNamesToIds)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Clean up the record of this task.  It's no longer in-progress, and it's done.
+	//   There's no need to pop `stack` due to go's slice semantics.
+	delete(inProgress, name)
+	done[name] = true
+
+	// A task can be run after all its dependencies have run, so we'll just append it to the traversal.
+	return append(traversal, task), nil
+}
+
+// TODO also grab all prereqs and stick them into a slice at the same time
+func TaskLinearize(task Task) ([]Task, error) {
+	traversal := []Task{}
+	done := map[string]bool{}
+	inProgress := map[string]bool{}
+	taskNamesToIds := map[string]string{}
+	return linearizeHelp(task, traversal, done, inProgress, nil, taskNamesToIds)
 }
 
 func traverseHelp(t Task, indent int) {
@@ -28,6 +94,41 @@ func traverseHelp(t Task, indent int) {
 	for _, dep := range t.TaskDependencies() {
 		traverseHelp(dep, indent+1)
 	}
+}
+
+func TaskDebugPrint(t Task) {
+	traverseHelp(t, 0)
+}
+
+func ObjectId(o interface{}) string {
+	return fmt.Sprintf("%p", o)
+}
+
+// TaskPrereqs gathers up all the prereqs of a task graph, returning an error if a name is detected
+//   for multiple different prereqs.
+func TaskPrereqs(t Task) ([]Prereq, error) {
+	taskOrder, err := TaskLinearize(t)
+	if err != nil {
+		return nil, err
+	}
+	prereqNameToId := map[string]string{}
+	var prereqs []Prereq
+	for _, task := range taskOrder {
+		for _, prereq := range task.TaskPrereqs() {
+			name := prereq.PrereqName()
+			newId := ObjectId(prereq)
+			if oldId, ok := prereqNameToId[name]; ok {
+				if newId != oldId {
+					return nil, errors.Errorf("duplicate prereq name %s for ids %s and %s", name, newId, oldId)
+				}
+				// otherwise: we've already seen this prereq, but it's okay so just don't add it to `prereqs` again
+			} else {
+				prereqNameToId[name] = newId
+				prereqs = append(prereqs, prereq)
+			}
+		}
+	}
+	return prereqs, nil
 }
 
 type FunctionTask struct {

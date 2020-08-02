@@ -27,11 +27,11 @@ func main() {
 		),
 	)
 
-	TaskTraverse(a)
+	TaskDebugPrint(a)
 
-	tr := TaskRunner{Task: a}
+	tr := SimpleTaskRunner{}
 
-	err := tr.Run()
+	err := tr.TaskRunnerRun(a)
 	doOrDie(err)
 
 	cmd := exec.Command("ls", "-al")

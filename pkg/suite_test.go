@@ -10,5 +10,6 @@ import (
 func TestPkg(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunTaskRunnerTests()
+	RunTaskTests()
 	RunSpecs(t, "task-runner")
 }
