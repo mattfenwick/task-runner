@@ -50,6 +50,7 @@ func (s SimpleTaskRunnerTaskState) String() string {
 //     Tasks report themselves as Done after execution.
 // Since SimpleTaskRunner returns a map of Task name to status, if execution fails, the caller
 //   can inspect the Task status map to determine which Tasks were run and which failed.
+// Tasks cannot be added after execution begins.
 type SimpleTaskRunner struct{}
 
 func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bool) (map[string]SimpleTaskRunnerTaskState, error) {

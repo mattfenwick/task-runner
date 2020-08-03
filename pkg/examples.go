@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
 	"sync/atomic"
@@ -106,4 +107,15 @@ func (rt *RunCountTask) TaskIsDone() (bool, error) {
 
 func (rt *RunCountTask) TaskAddDependency(dep Task) {
 	rt.WrappedTask.TaskAddDependency(dep)
+}
+
+func (rt *RunCountTask) TaskJSONObject() map[string]interface{} {
+	return map[string]interface{}{
+		"RunCount":    rt.RunCount,
+		"WrappedTask": rt.WrappedTask.TaskJSONObject(),
+	}
+}
+
+func (rt *RunCountTask) MarshalJSON() ([]byte, error) {
+	return json.Marshal(rt.TaskJSONObject())
 }

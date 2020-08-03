@@ -9,7 +9,8 @@ import (
 
 func TestPkg(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunTaskRunnerTests()
 	RunTaskTests()
+	RunSimpleTaskRunnerTests()
+	RunParallelTaskRunnerTests()
 	RunSpecs(t, "task-runner")
 }

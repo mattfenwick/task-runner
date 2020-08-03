@@ -65,9 +65,8 @@ func setKeyTwicePrereqGraph() (map[string]bool, Task) {
 	return ran, a
 }
 
-func RunTaskRunnerTests() {
+func RunSimpleTaskRunnerTests() {
 	Describe("TaskRunner", func() {
-		// TODO run same tests for ParallelTaskRunner
 		It("runs each not-done task exactly once", func() {
 			dict, t := setKeyOnceGraph()
 

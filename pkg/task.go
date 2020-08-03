@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -17,6 +18,9 @@ type Task interface {
 	//   adding a dependency that's already there (probably yes)
 	//   adding a dependency to itself (not sure)
 	TaskAddDependency(dep Task)
+
+	// For convenient JSON serialization
+	TaskJSONObject() map[string]interface{}
 }
 
 func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
@@ -78,6 +82,29 @@ func (ft *FunctionTask) TaskIsDone() (bool, error) {
 
 func (ft *FunctionTask) TaskAddDependency(dep Task) {
 	ft.Deps = append(ft.Deps, dep)
+}
+
+func (ft *FunctionTask) TaskJSONObject() map[string]interface{} {
+	var deps []interface{}
+	for _, dep := range ft.Deps {
+		deps = append(deps, dep.TaskJSONObject())
+	}
+	var prereqs []string
+	for _, p := range ft.Prereqs {
+		prereqs = append(prereqs, p.PrereqName())
+	}
+	dict := map[string]interface{}{
+		"Run":          "[function]",
+		"Dependencies": deps,
+		"IsDone":       "[function]",
+		"Prereqs":      prereqs,
+		"Name":         ft.Name,
+	}
+	return dict
+}
+
+func (ft *FunctionTask) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ft.TaskJSONObject())
 }
 
 func NewShellTask(name string, cmd *exec.Cmd, deps []Task, prereqs []Prereq, isDone func() (bool, error)) *FunctionTask {
