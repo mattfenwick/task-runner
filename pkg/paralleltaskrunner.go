@@ -258,9 +258,3 @@ func (runner *ParallelTaskRunner) Run() error {
 func (runner *ParallelTaskRunner) Stop() {
 	close(runner.stopChan)
 }
-
-// this method is useless
-func (runner *ParallelTaskRunner) TaskRunnerRun(task Task) error {
-	runner.AddTask(task)
-	return runner.Run()
-}

@@ -63,10 +63,10 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 	for _, t := range taskOrder {
 		taskStates[t.TaskName()] = SimpleTaskRunnerTaskStateWaiting
 	}
-	log.Infof("task states: %+v", taskStates)
+	log.Debugf("task states: %+v", taskStates)
 
 	if runAllPrereqsImmediately {
-		log.Infof("running %d prereqs immediately", len(prereqs))
+		log.Debugf("running %d prereqs immediately", len(prereqs))
 		errs := []string{}
 		for _, p := range prereqs {
 			log.Debugf("running prereq %s", p.PrereqName())
@@ -78,7 +78,7 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 		if len(errs) > 0 {
 			return taskStates, errors.Errorf("%d prereqs failed: [%s]", len(errs), strings.Join(errs, ", "))
 		}
-		log.Infof("all %d prereqs succeeded", len(prereqs))
+		log.Debugf("all %d prereqs succeeded", len(prereqs))
 	}
 
 	for _, task := range taskOrder {
@@ -98,29 +98,28 @@ func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskR
 		return err
 	}
 	if isDone {
-		log.Infof("skipping task %s, already done", task.TaskName())
+		log.Debugf("skipping task %s, already done", task.TaskName())
 		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateSkipped
 		return nil
 	}
 
 	// Make sure all the prerequisites for a task are met.
 	for _, p := range task.TaskPrereqs() {
-		log.Infof("checking prereq %s of task %s", p.PrereqName(), task.TaskName())
+		log.Debugf("checking prereq %s of task %s", p.PrereqName(), task.TaskName())
 		if err := p.PrereqRun(); err != nil {
 			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
 			return errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), task.TaskName())
 		}
-		log.Infof("prereq %s of task %s is good to go", p.PrereqName(), task.TaskName())
+		log.Debugf("prereq %s of task %s is good to go", p.PrereqName(), task.TaskName())
 	}
 
 	// Actually run the task.
-	log.Infof("running task %s", task.TaskName())
+	log.Debugf("running task %s", task.TaskName())
 	err = task.TaskRun()
 	if err != nil {
 		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
 		return errors.WithMessagef(err, "failed to run task %s", task.TaskName())
 	}
-	log.Infof("finished running task %s", task.TaskName())
 
 	// After running a task, make sure that it considers itself to be done.
 	isDone, err = task.TaskIsDone()
@@ -133,6 +132,7 @@ func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskR
 		return errors.Errorf("ran task %s but it still reports itself as not done", task.TaskName())
 	}
 
+	log.Debugf("finished running task %s", task.TaskName())
 	taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateComplete
 	return nil
 }

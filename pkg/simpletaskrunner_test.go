@@ -45,23 +45,23 @@ func setKeyCountGraph() (map[string]bool, map[string]*RunCountTask, Task) {
 
 func setKeyTwiceGraph() (map[string]bool, Task) {
 	ran := map[string]bool{}
-	d := SetKeyTask("d", "d", ran,
-		SetKeyTask("d-again", "d", ran))
+	dAgain := SetKeyTask("d-again", "d", ran,
+		SetKeyTask("d", "d", ran))
 	a := SetKeyTask("a", "a", ran,
-		SetKeyTask("b", "b", ran, d),
-		SetKeyTask("c", "c", ran),
-		d)
+		SetKeyTask("b", "b", ran, dAgain),
+		SetKeyTask("c", "c", ran, dAgain),
+		dAgain)
 	return ran, a
 }
 
 func setKeyTwicePrereqGraph() (map[string]bool, Task) {
 	ran := map[string]bool{}
-	d := SetKeyTaskPrereq("d", "d", ran,
-		SetKeyTaskPrereq("d-again", "d", ran))
+	dAgain := SetKeyTaskPrereq("d-again", "d", ran,
+		SetKeyTaskPrereq("d", "d", ran))
 	a := SetKeyTaskPrereq("a", "a", ran,
-		SetKeyTaskPrereq("b", "b", ran, d),
-		SetKeyTaskPrereq("c", "c", ran),
-		d)
+		SetKeyTaskPrereq("b", "b", ran, dAgain),
+		SetKeyTaskPrereq("c", "c", ran, dAgain),
+		dAgain)
 	return ran, a
 }
 
@@ -107,7 +107,7 @@ func RunSimpleTaskRunnerTests() {
 
 			statuses, err := (&SimpleTaskRunner{}).TaskRunnerRun(t, false)
 			Expect(err).NotTo(Succeed())
-			Expect(err.Error()).To(MatchRegexp("prereq 'prereq-keycheck-task-setkey-d' failed for task task-setkey-d: key d already in dict"))
+			Expect(err.Error()).To(MatchRegexp("prereq 'prereq-keycheck-task-setkey-d-again' failed for task task-setkey-d-again: key d already in dict"))
 
 			// only d runs
 			Expect(dict).To(HaveKeyWithValue("d", true))
@@ -119,25 +119,9 @@ func RunSimpleTaskRunnerTests() {
 			Expect(statuses).To(HaveKeyWithValue("task-setkey-a", SimpleTaskRunnerTaskStateWaiting))
 			Expect(statuses).To(HaveKeyWithValue("task-setkey-b", SimpleTaskRunnerTaskStateWaiting))
 			Expect(statuses).To(HaveKeyWithValue("task-setkey-c", SimpleTaskRunnerTaskStateWaiting))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-d", SimpleTaskRunnerTaskStateFailed))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", SimpleTaskRunnerTaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-d", SimpleTaskRunnerTaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", SimpleTaskRunnerTaskStateFailed))
 		})
-
-		var runIsDoneFailureTask = func(name string, shouldError bool, deps ...Task) Task {
-			isDone := false
-			return NewFunctionTask(fmt.Sprintf("task-runIsDoneFailureTask-%s", name), func() error {
-				isDone = true
-				return nil
-			}, deps, []Prereq{}, func() (b bool, err error) {
-				if !isDone {
-					return false, nil
-				}
-				if shouldError {
-					return false, errors.Errorf("test error: predetermined IsDone failure")
-				}
-				return false, nil
-			})
-		}
 
 		It("fails to execute tasks whose IsDone fails", func() {
 			errorMessage := "test error: pre-IsDone check reports error"
@@ -152,6 +136,22 @@ func RunSimpleTaskRunnerTests() {
 
 			Expect(statuses).To(HaveKeyWithValue("task-isdone-failure", SimpleTaskRunnerTaskStateFailed))
 		})
+
+		runIsDoneFailureTask := func(name string, shouldError bool, deps ...Task) Task {
+			isDone := false
+			return NewFunctionTask(fmt.Sprintf("task-runIsDoneFailureTask-%s", name), func() error {
+				isDone = true
+				return nil
+			}, deps, []Prereq{}, func() (b bool, err error) {
+				if !isDone {
+					return false, nil
+				}
+				if shouldError {
+					return false, errors.Errorf("test error: predetermined IsDone failure")
+				}
+				return false, nil
+			})
+		}
 
 		It("fails after executing a task, if the post-IsDone check returns false", func() {
 			t := runIsDoneFailureTask("task-isdone-false", false)
@@ -181,7 +181,7 @@ func RunSimpleTaskRunnerTests() {
 
 				statuses, err := (&SimpleTaskRunner{}).TaskRunnerRun(t, false)
 				Expect(err).NotTo(Succeed())
-				Expect(err.Error()).To(MatchRegexp("failed to run task task-setkey-d: key d already in dict"))
+				Expect(err.Error()).To(MatchRegexp("failed to run task task-setkey-d-again: key d already in dict"))
 
 				// only d runs
 				Expect(dict).To(HaveKeyWithValue("d", true))
@@ -193,8 +193,8 @@ func RunSimpleTaskRunnerTests() {
 				Expect(statuses).To(HaveKeyWithValue("task-setkey-a", SimpleTaskRunnerTaskStateWaiting))
 				Expect(statuses).To(HaveKeyWithValue("task-setkey-b", SimpleTaskRunnerTaskStateWaiting))
 				Expect(statuses).To(HaveKeyWithValue("task-setkey-c", SimpleTaskRunnerTaskStateWaiting))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-d", SimpleTaskRunnerTaskStateFailed))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", SimpleTaskRunnerTaskStateComplete))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", SimpleTaskRunnerTaskStateFailed))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-d", SimpleTaskRunnerTaskStateComplete))
 			})
 		})
 	})
