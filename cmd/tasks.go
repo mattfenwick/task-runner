@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	. "github.com/mattfenwick/task-runner/pkg"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 func doOrDie(err error) {
@@ -14,7 +15,7 @@ func doOrDie(err error) {
 	}
 }
 
-func main() {
+func taskGraph() Task {
 	e := PrintTask("e")
 	c := PrintTask("c",
 		//PrintTask("b"),
@@ -28,7 +29,11 @@ func main() {
 			e,
 		),
 	)
+	return a
+}
 
+func main() {
+	a := taskGraph()
 	TaskDebugPrint(a)
 
 	tr := SimpleTaskRunner{}
@@ -45,10 +50,38 @@ func main() {
 	})
 
 	idempotentExample()
+	parallelExample()
 
 	cmd := exec.Command("ls", "-al")
 	err = RunCommandAndPrint(cmd)
 	doOrDie(err)
+}
+
+func parallelExample() {
+	fmt.Printf("\n\nparallel example:\n")
+	a := taskGraph()
+	wg := &sync.WaitGroup{}
+	wg.Add(5)
+	runner := NewParallelTaskRunner(5, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+		wg.Done()
+	})
+	doOrDie(runner.AddTask(a))
+	doOrDie(runner.Run())
+	wg.Wait()
+
+	TaskDebugPrint(a)
+
+	_, task := setKeyTwiceGraph()
+	taskStates, err := BuildDependencyTablesIterative(task)
+	doOrDie(err)
+	log.Infof("task states: %+v", taskStates)
+
+	cycle := trivialCycle()
+	taskStates, err = BuildDependencyTablesIterative(cycle)
+	if err == nil {
+		panic("expected error, found none")
+	}
+	log.Infof("trivial cycle error: %+v", err)
 }
 
 func idempotentExample() {
@@ -81,4 +114,22 @@ func idempotentExample() {
 		}
 		fmt.Printf("%s%s: %s\n", strings.Repeat(" ", level*2), currentTask.TaskName(), annotation)
 	})
+}
+
+func setKeyTwiceGraph() (map[string]bool, Task) {
+	ran := map[string]bool{}
+	mux := &sync.Mutex{}
+	dAgain := SetKeyTask("d-again", "d", mux, ran,
+		SetKeyTask("d", "d", mux, ran))
+	a := SetKeyTask("a", "a", mux, ran,
+		SetKeyTask("b", "b", mux, ran, dAgain),
+		SetKeyTask("c", "c", mux, ran, dAgain),
+		dAgain)
+	return ran, a
+}
+
+func trivialCycle() Task {
+	a := PrintTask("a")
+	a.TaskAddDependency(a)
+	return a
 }

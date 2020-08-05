@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
+	"sync"
 	"sync/atomic"
 )
 
 // PrintTask prints a string and marks itself as done.
 func PrintTask(s string, deps ...Task) Task {
 	isDone := false
-	return NewFunctionTask(fmt.Sprintf("task-print-%s", s), func() error {
+	return NewFunctionTask(s, func() error {
 		fmt.Println(s)
 		isDone = true
 		return nil
@@ -23,13 +24,15 @@ func PrintTask(s string, deps ...Task) Task {
 // If the key is already set, it returns an error.
 // The purpose of this Task is to track whether it's been executed or not,
 // and to enforce that it is not executed more than once.
-func SetKeyTask(name string, key string, dict map[string]bool, deps ...Task) Task {
+func SetKeyTask(name string, key string, mux *sync.Mutex, dict map[string]bool, deps ...Task) Task {
 	isDone := false
 	return NewFunctionTask(fmt.Sprintf("task-setkey-%s", name), func() error {
 		if _, ok := dict[key]; ok {
 			return errors.Errorf("key %s already in dict", key)
 		}
+		mux.Lock()
 		dict[key] = true
+		mux.Unlock()
 		isDone = true
 		return nil
 	}, deps, []Prereq{}, func() (b bool, err error) {

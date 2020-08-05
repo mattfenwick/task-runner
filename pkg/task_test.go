@@ -52,7 +52,7 @@ func RunTaskTests() {
 			It("linearize", func() {
 				tasks, prereqs, err := TaskLinearize(validDAG())
 				Expect(err).To(Succeed())
-				Expect(taskNames(tasks)).To(Equal([]string{"task-print-e", "task-print-c", "task-print-d", "task-print-b", "task-print-a"}))
+				Expect(taskNames(tasks)).To(Equal([]string{"e", "c", "d", "b", "a"}))
 				Expect(prereqs).To(BeNil())
 			})
 

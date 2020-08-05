@@ -6,15 +6,17 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"sync"
 )
 
 func setKeyOnceGraph() (map[string]bool, Task) {
 	ran := map[string]bool{}
-	d := SetKeyTask("d", "d", ran,
-		SetKeyTask("e", "e", ran))
-	a := SetKeyTask("a", "a", ran,
-		SetKeyTask("b", "b", ran, d),
-		SetKeyTask("c", "c", ran),
+	mux := &sync.Mutex{}
+	d := SetKeyTask("d", "d", mux, ran,
+		SetKeyTask("e", "e", mux, ran))
+	a := SetKeyTask("a", "a", mux, ran,
+		SetKeyTask("b", "b", mux, ran, d),
+		SetKeyTask("c", "c", mux, ran),
 		d)
 	return ran, a
 }
@@ -45,11 +47,12 @@ func setKeyCountGraph() (map[string]bool, map[string]*RunCountTask, Task) {
 
 func setKeyTwiceGraph() (map[string]bool, Task) {
 	ran := map[string]bool{}
-	dAgain := SetKeyTask("d-again", "d", ran,
-		SetKeyTask("d", "d", ran))
-	a := SetKeyTask("a", "a", ran,
-		SetKeyTask("b", "b", ran, dAgain),
-		SetKeyTask("c", "c", ran, dAgain),
+	mux := &sync.Mutex{}
+	dAgain := SetKeyTask("d-again", "d", mux, ran,
+		SetKeyTask("d", "d", mux, ran))
+	a := SetKeyTask("a", "a", mux, ran,
+		SetKeyTask("b", "b", mux, ran, dAgain),
+		SetKeyTask("c", "c", mux, ran, dAgain),
 		dAgain)
 	return ran, a
 }
