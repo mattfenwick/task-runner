@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	. "github.com/mattfenwick/task-runner/pkg"
+	"github.com/mattfenwick/task-runner/pkg/examples"
+	. "github.com/mattfenwick/task-runner/pkg/task-runner"
 	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
@@ -16,15 +17,15 @@ func doOrDie(err error) {
 }
 
 func taskGraph() Task {
-	e := PrintTask("e")
-	c := PrintTask("c",
+	e := examples.PrintTask("e")
+	c := examples.PrintTask("c",
 		//PrintTask("b"),
 		e,
 	)
-	a := PrintTask("a",
-		PrintTask("b",
+	a := examples.PrintTask("a",
+		examples.PrintTask("b",
 			c,
-			PrintTask("d"),
+			examples.PrintTask("d"),
 			//PrintTask("d"),
 			e,
 		),
@@ -71,12 +72,12 @@ func parallelExample() {
 
 	TaskDebugPrint(a)
 
-	_, task := setKeyTwiceGraph()
+	_, task := examples.SetKeyTwiceGraph()
 	taskStates, err := BuildDependencyTablesIterative(task)
 	doOrDie(err)
 	log.Infof("task states: %+v", taskStates)
 
-	cycle := trivialCycle()
+	cycle := examples.TrivialCycleGraph()
 	taskStates, err = BuildDependencyTablesIterative(cycle)
 	if err == nil {
 		panic("expected error, found none")
@@ -90,12 +91,12 @@ func idempotentExample() {
 		"c": true,
 		"d": true,
 	}
-	e := SetKeyTaskIdempotent("e", "e", dict)
-	c := SetKeyTaskIdempotent("c", "c", dict, e)
-	a := SetKeyTaskIdempotent("a", "a", dict,
-		SetKeyTaskIdempotent("b", "b", dict,
+	e := examples.SetKeyTaskIdempotent("e", "e", dict)
+	c := examples.SetKeyTaskIdempotent("c", "c", dict, e)
+	a := examples.SetKeyTaskIdempotent("a", "a", dict,
+		examples.SetKeyTaskIdempotent("b", "b", dict,
 			c,
-			SetKeyTaskIdempotent("d", "d", dict),
+			examples.SetKeyTaskIdempotent("d", "d", dict),
 			e,
 		),
 	)
@@ -114,22 +115,4 @@ func idempotentExample() {
 		}
 		fmt.Printf("%s%s: %s\n", strings.Repeat(" ", level*2), currentTask.TaskName(), annotation)
 	})
-}
-
-func setKeyTwiceGraph() (map[string]bool, Task) {
-	ran := map[string]bool{}
-	mux := &sync.Mutex{}
-	dAgain := SetKeyTask("d-again", "d", mux, ran,
-		SetKeyTask("d", "d", mux, ran))
-	a := SetKeyTask("a", "a", mux, ran,
-		SetKeyTask("b", "b", mux, ran, dAgain),
-		SetKeyTask("c", "c", mux, ran, dAgain),
-		dAgain)
-	return ran, a
-}
-
-func trivialCycle() Task {
-	a := PrintTask("a")
-	a.TaskAddDependency(a)
-	return a
 }

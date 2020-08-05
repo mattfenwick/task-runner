@@ -1,4 +1,4 @@
-package pkg
+package task_runner
 
 import (
 	"encoding/json"
@@ -135,7 +135,6 @@ ForLoop:
 //   - cycle detection
 //   - duplicate detection (done?)
 //   - gather up prereqs
-//   make sure to differentiate between two different tasks having a dep on something, and two different tasks having the same name
 func BuildDependencyTables(task Task) (map[string]*RunnerTask, error) {
 	tasks := map[string]*RunnerTask{}
 	err := buildDependencyTablesHelp(task, tasks)

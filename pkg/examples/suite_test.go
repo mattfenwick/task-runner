@@ -1,4 +1,4 @@
-package pkg
+package examples
 
 import (
 	log "github.com/sirupsen/logrus"

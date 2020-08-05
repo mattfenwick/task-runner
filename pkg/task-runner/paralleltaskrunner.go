@@ -1,4 +1,4 @@
-package pkg
+package task_runner
 
 import (
 	"github.com/pkg/errors"
