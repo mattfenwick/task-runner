@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"encoding/json"
 	"fmt"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -17,14 +16,14 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(5)
-			didFinishTask := func(t Task, s ParallelTaskRunnerTaskState, err error) {
+			didFinishTask := func(t Task, s TaskState, err error) {
 				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
 				wg.Done()
 			}
 			runner := NewParallelTaskRunner(2, didFinishTask)
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			Expect(runner.Run()).To(Succeed())
+			Expect(runner.Start()).To(Succeed())
 
 			wg.Wait()
 			for _, s := range []string{"a", "b", "c", "d", "e"} {
@@ -39,8 +38,8 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(5)
-			states := map[string]ParallelTaskRunnerTaskState{}
-			didFinishTask := func(t Task, s ParallelTaskRunnerTaskState, err error) {
+			states := map[string]TaskState{}
+			didFinishTask := func(t Task, s TaskState, err error) {
 				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
 				states[t.TaskName()] = s
 				wg.Done()
@@ -48,7 +47,7 @@ func RunParallelTaskRunnerTests() {
 			runner := NewParallelTaskRunner(1, didFinishTask)
 
 			Expect(runner.AddTask(rootTask)).To(Succeed())
-			Expect(runner.Run()).To(Succeed())
+			Expect(runner.Start()).To(Succeed())
 
 			// uncomment for debugging help
 			//jbytes, err := json.MarshalIndent(runner, "", "  ")
@@ -66,11 +65,11 @@ func RunParallelTaskRunnerTests() {
 			Expect(tasks).To(HaveKey("d-again"))
 			Expect(tasks["d-again"].RunCount).To(Equal(int64(0)))
 
-			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-a", ParallelTaskRunnerTaskStateComplete))
-			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-b", ParallelTaskRunnerTaskStateComplete))
-			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-c", ParallelTaskRunnerTaskStateComplete))
-			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d", ParallelTaskRunnerTaskStateComplete))
-			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d-again", ParallelTaskRunnerTaskStateSkipped))
+			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-a", TaskStateComplete))
+			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-b", TaskStateComplete))
+			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-c", TaskStateComplete))
+			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d", TaskStateComplete))
+			Expect(states).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d-again", TaskStateSkipped))
 		})
 
 		It("fails to execute tasks whose prereqs fail", func() {
@@ -78,15 +77,15 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(2)
-			states := map[string]ParallelTaskRunnerTaskState{}
-			runner := NewParallelTaskRunner(2, func(t Task, s ParallelTaskRunnerTaskState, err error) {
+			states := map[string]TaskState{}
+			runner := NewParallelTaskRunner(2, func(t Task, s TaskState, err error) {
 				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
 				states[t.TaskName()] = s
 				wg.Done()
 			})
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			err := runner.Run()
+			err := runner.Start()
 
 			Expect(err).To(Succeed())
 			//Expect(err.Error()).To(MatchRegexp("prereq 'prereq-keycheck-task-setkey-d' failed for task task-setkey-d: key d already in dict"))
@@ -99,11 +98,11 @@ func RunParallelTaskRunnerTests() {
 				Expect(dict).NotTo(HaveKey(s))
 			}
 
-			Expect(runner.Tasks["task-setkey-a"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-			Expect(runner.Tasks["task-setkey-b"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-			Expect(runner.Tasks["task-setkey-c"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-			Expect(runner.Tasks["task-setkey-d"].State).To(Equal(ParallelTaskRunnerTaskStateComplete))
-			Expect(runner.Tasks["task-setkey-d-again"].State).To(Equal(ParallelTaskRunnerTaskStateFailed))
+			Expect(runner.Tasks["task-setkey-a"].State).To(Equal(TaskStateWaiting))
+			Expect(runner.Tasks["task-setkey-b"].State).To(Equal(TaskStateWaiting))
+			Expect(runner.Tasks["task-setkey-c"].State).To(Equal(TaskStateWaiting))
+			Expect(runner.Tasks["task-setkey-d"].State).To(Equal(TaskStateComplete))
+			Expect(runner.Tasks["task-setkey-d-again"].State).To(Equal(TaskStateFailed))
 		})
 
 		It("fails to execute tasks whose IsDone fails", func() {
@@ -114,16 +113,16 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := NewParallelTaskRunner(2, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+			runner := NewParallelTaskRunner(2, func(task Task, state TaskState, err error) {
 				wg.Done()
 			})
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			runner.Run()
+			runner.Start()
 
 			wg.Wait()
 
-			Expect(runner.Tasks["task-isdone-failure"].State).To(Equal(ParallelTaskRunnerTaskStateFailed))
+			Expect(runner.Tasks["task-isdone-failure"].State).To(Equal(TaskStateFailed))
 		})
 
 		runIsDoneFailureTask := func(name string, shouldError bool, deps ...Task) Task {
@@ -147,15 +146,15 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := NewParallelTaskRunner(2, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+			runner := NewParallelTaskRunner(2, func(task Task, state TaskState, err error) {
 				wg.Done()
 			})
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			Expect(runner.Run()).To(Succeed())
+			Expect(runner.Start()).To(Succeed())
 			wg.Wait()
 
-			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(ParallelTaskRunnerTaskStateFailed))
+			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(TaskStateFailed))
 		})
 
 		It("fails after executing a task, if the post-IsDone check errors", func() {
@@ -163,15 +162,15 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := NewParallelTaskRunner(2, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+			runner := NewParallelTaskRunner(2, func(task Task, state TaskState, err error) {
 				wg.Done()
 			})
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			Expect(runner.Run()).To(Succeed())
+			Expect(runner.Start()).To(Succeed())
 			wg.Wait()
 
-			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(ParallelTaskRunnerTaskStateFailed))
+			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(TaskStateFailed))
 		})
 
 		Describe("Task failures", func() {
@@ -180,12 +179,12 @@ func RunParallelTaskRunnerTests() {
 
 				wg := &sync.WaitGroup{}
 				wg.Add(2)
-				runner := NewParallelTaskRunner(2, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+				runner := NewParallelTaskRunner(2, func(task Task, state TaskState, err error) {
 					wg.Done()
 				})
 
 				Expect(runner.AddTask(t)).To(Succeed())
-				Expect(runner.Run()).To(Succeed())
+				Expect(runner.Start()).To(Succeed())
 				wg.Wait()
 
 				// only d runs
@@ -195,111 +194,11 @@ func RunParallelTaskRunnerTests() {
 					Expect(dict).NotTo(HaveKey(s))
 				}
 
-				Expect(runner.Tasks["task-setkey-a"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-b"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-c"].State).To(Equal(ParallelTaskRunnerTaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-d"].State).To(Equal(ParallelTaskRunnerTaskStateComplete))
-				Expect(runner.Tasks["task-setkey-d-again"].State).To(Equal(ParallelTaskRunnerTaskStateFailed))
-			})
-		})
-
-		manyDepsOnATaskDAG := func() Task {
-			dAgain := PrintTask("d-again",
-				PrintTask("d"))
-			a := PrintTask("a",
-				dAgain,
-				PrintTask("b", dAgain),
-				PrintTask("c", dAgain))
-			return a
-		}
-
-		trivialCycle := func() Task {
-			a := PrintTask("a")
-			a.TaskAddDependency(a)
-			return a
-		}
-
-		nonTrivialCycle := func() Task {
-			d := PrintTask("d")
-			c := PrintTask("c", d)
-			b := PrintTask("b", c)
-			a := PrintTask("a", b)
-			d.TaskAddDependency(a)
-			return a
-		}
-
-		Describe("BuildDependencyTables", func() {
-			Describe("Iterative", func() {
-				It("Handles a DAG where a node appears multiple times", func() {
-					_, task := setKeyTwiceGraph()
-					taskStates, err := BuildDependencyTablesIterative(task)
-					Expect(err).To(Succeed())
-
-					Expect(taskStates).To(HaveLen(5))
-				})
-
-				It("Handles a DAG where a node is in the stack multiple times at once", func() {
-					task := manyDepsOnATaskDAG()
-					taskStates, err := BuildDependencyTablesIterative(task)
-					Expect(err).To(Succeed())
-
-					Expect(taskStates).To(HaveLen(5))
-
-					bs, _ := json.MarshalIndent(taskStates, "", "  ")
-					fmt.Printf("\n%s\n", bs)
-
-					Expect(taskStates["a"].UpstreamDeps).To(HaveKeyWithValue("d-again", true))
-					Expect(taskStates["a"].UpstreamDeps).To(HaveKeyWithValue("b", true))
-					Expect(taskStates["a"].UpstreamDeps).To(HaveKeyWithValue("c", true))
-					Expect(taskStates["a"].DownstreamDeps).To(BeEmpty())
-
-					Expect(taskStates["b"].UpstreamDeps).To(HaveKeyWithValue("d-again", true))
-					Expect(taskStates["b"].DownstreamDeps).To(HaveKeyWithValue("a", true))
-
-					Expect(taskStates["c"].UpstreamDeps).To(HaveKeyWithValue("d-again", true))
-					Expect(taskStates["c"].DownstreamDeps).To(HaveKeyWithValue("a", true))
-
-					Expect(taskStates["d-again"].UpstreamDeps).To(HaveKeyWithValue("d", true))
-					Expect(taskStates["d-again"].DownstreamDeps).To(HaveKeyWithValue("a", true))
-					Expect(taskStates["d-again"].DownstreamDeps).To(HaveKeyWithValue("b", true))
-					Expect(taskStates["d-again"].DownstreamDeps).To(HaveKeyWithValue("c", true))
-
-					Expect(taskStates["d"].UpstreamDeps).To(BeEmpty())
-					Expect(taskStates["d"].DownstreamDeps).To(HaveKeyWithValue("d-again", true))
-				})
-
-				It("Recognizes a trivial cycle", func() {
-					task := trivialCycle()
-					taskStates, err := BuildDependencyTablesIterative(task)
-					Expect(err).NotTo(Succeed())
-					Expect(err.Error()).To(MatchRegexp("cycle detected"))
-
-					Expect(taskStates).To(HaveLen(0))
-				})
-
-				It("Recognizes a non-trivial cycle", func() {
-					task := nonTrivialCycle()
-					taskStates, err := BuildDependencyTablesIterative(task)
-					Expect(err).NotTo(Succeed())
-					Expect(err.Error()).To(MatchRegexp("cycle detected"))
-
-					Expect(taskStates).To(HaveLen(0))
-				})
-
-				dupeNamesGraph := func() Task {
-					a2 := PrintTask("a")
-					a := PrintTask("a", a2)
-					return a
-				}
-
-				It("Recognizes duplicate names", func() {
-					task := dupeNamesGraph()
-					taskStates, err := BuildDependencyTablesIterative(task)
-					Expect(err).NotTo(Succeed())
-					Expect(err.Error()).To(MatchRegexp("duplicate task name 'a' detected"))
-
-					Expect(taskStates).To(HaveLen(0))
-				})
+				Expect(runner.Tasks["task-setkey-a"].State).To(Equal(TaskStateWaiting))
+				Expect(runner.Tasks["task-setkey-b"].State).To(Equal(TaskStateWaiting))
+				Expect(runner.Tasks["task-setkey-c"].State).To(Equal(TaskStateWaiting))
+				Expect(runner.Tasks["task-setkey-d"].State).To(Equal(TaskStateComplete))
+				Expect(runner.Tasks["task-setkey-d-again"].State).To(Equal(TaskStateFailed))
 			})
 		})
 	})

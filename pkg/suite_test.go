@@ -12,6 +12,7 @@ func TestPkg(t *testing.T) {
 	log.SetLevel(log.DebugLevel)
 	RegisterFailHandler(Fail)
 	RunTaskTests()
+	RunDfsTests()
 	RunSimpleTaskRunnerTests()
 	RunParallelTaskRunnerTests()
 	RunSpecs(t, "task-runner")

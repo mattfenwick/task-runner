@@ -62,11 +62,11 @@ func parallelExample() {
 	a := taskGraph()
 	wg := &sync.WaitGroup{}
 	wg.Add(5)
-	runner := NewParallelTaskRunner(5, func(task Task, state ParallelTaskRunnerTaskState, err error) {
+	runner := NewParallelTaskRunner(5, func(task Task, state TaskState, err error) {
 		wg.Done()
 	})
 	doOrDie(runner.AddTask(a))
-	doOrDie(runner.Run())
+	doOrDie(runner.Start())
 	wg.Wait()
 
 	TaskDebugPrint(a)
