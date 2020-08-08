@@ -107,9 +107,9 @@ func idempotentExample() {
 		),
 	)
 
-	fmt.Printf("dot graph before:\n%s\n", TaskToDotFormat(a).RenderAsDot())
+	fmt.Printf("dot graph before:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
-	fmt.Printf("list before:\n%s\n", TaskToDotFormat(a).RenderAsList())
+	fmt.Printf("list before:\n%s\n", TaskToGraphDump(a).RenderAsList(true))
 
 	TaskDebugPrint(a)
 
@@ -126,7 +126,7 @@ func idempotentExample() {
 		fmt.Printf("%s%s: %s\n", strings.Repeat(" ", level*2), currentTask.TaskName(), annotation)
 	})
 
-	fmt.Printf("dot graph after:\n%s\n", TaskToDotFormat(a).RenderAsDot())
+	fmt.Printf("dot graph after:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
-	fmt.Printf("list after:\n%s\n", TaskToDotFormat(a).RenderAsList())
+	fmt.Printf("list after:\n%s\n", TaskToGraphDump(a).RenderAsList(true))
 }

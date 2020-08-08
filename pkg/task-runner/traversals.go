@@ -1,6 +1,7 @@
 package task_runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
 	"strings"
@@ -60,41 +61,62 @@ type GraphDotTask struct {
 	Deps    []string
 }
 
-func (g *GraphDotDump) RenderAsList() string {
-	lines := []string{
-		"Prereqs:",
-	}
-	for prereq, ok := range g.Prereqs {
-		status := "ok"
-		if !ok {
-			status = "not done"
+func (g *GraphDotDump) RenderAsJSON(includePrereqs bool) string {
+	if !includePrereqs {
+		g.Prereqs = nil
+		for _, taskInfo := range g.Tasks {
+			taskInfo.Prereqs = nil
 		}
-		lines = append(lines, fmt.Sprintf("  %s: %s", prereq, status))
+	}
+	bytes, err := json.MarshalIndent(g, "", "  ")
+	if err != nil {
+		panic(errors.Wrapf(err, "unable to marshal json (should not have happened)"))
+	}
+	return string(bytes)
+}
+
+func (g *GraphDotDump) RenderAsList(includePrereqs bool) string {
+	var lines []string
+	if includePrereqs {
+		lines = append(lines, "Prereqs:")
+		for prereq, ok := range g.Prereqs {
+			status := "ok"
+			if !ok {
+				status = "not done"
+			}
+			lines = append(lines, fmt.Sprintf("  %s: %s", prereq, status))
+		}
 	}
 	lines = append(lines, "")
 	for task, taskInfo := range g.Tasks {
 		lines = append(lines, fmt.Sprintf("%s: %s", task, taskInfo.Status))
+		for _, prereq := range taskInfo.Prereqs {
+			lines = append(lines, "  (prq): "+prereq)
+		}
 		for _, dep := range taskInfo.Deps {
-			// TODO should we repeat prereqs here as well?
 			lines = append(lines, "  "+dep)
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-func (g *GraphDotDump) RenderAsDot() string {
+func (g *GraphDotDump) RenderAsDot(includePrereqs bool) string {
 	lines := []string{`digraph "task-runner" {`}
-	for prereq, isSatisfied := range g.Prereqs {
-		color := "red"
-		if isSatisfied {
-			color = "green"
+	if includePrereqs {
+		for prereq, isSatisfied := range g.Prereqs {
+			color := "red"
+			if isSatisfied {
+				color = "green"
+			}
+			lines = append(lines, fmt.Sprintf(`  "%s" [color="%s"];`, prereq, color))
 		}
-		lines = append(lines, fmt.Sprintf(`  "%s" [color="%s"];`, prereq, color))
 	}
 	for task, taskInfo := range g.Tasks {
 		lines = append(lines, fmt.Sprintf(`  "%s" [color=%s];`, task, taskInfo.Status.Color()))
-		for _, prereq := range taskInfo.Prereqs {
-			lines = append(lines, fmt.Sprintf(`  "%s" -> "%s";`, task, prereq))
+		if includePrereqs {
+			for _, prereq := range taskInfo.Prereqs {
+				lines = append(lines, fmt.Sprintf(`  "%s" -> "%s";`, task, prereq))
+			}
 		}
 		for _, to := range taskInfo.Deps {
 			lines = append(lines, fmt.Sprintf(`  "%s" -> "%s";`, task, to))
@@ -103,7 +125,7 @@ func (g *GraphDotDump) RenderAsDot() string {
 	return strings.Join(append(lines, "}"), "\n")
 }
 
-func TaskToDotFormat(rootTask Task) *GraphDotDump {
+func TaskToGraphDump(rootTask Task) *GraphDotDump {
 	dump := &GraphDotDump{
 		Prereqs: map[string]bool{},
 		Tasks:   map[string]*GraphDotTask{},
