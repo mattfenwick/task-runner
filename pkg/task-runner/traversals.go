@@ -50,6 +50,7 @@ func (gs GraphDotTaskStatus) Color() string {
 	}
 }
 
+// TODO sort this stuff
 type GraphDotDump struct {
 	Prereqs map[string]bool
 	Tasks   map[string]*GraphDotTask
@@ -87,15 +88,18 @@ func (g *GraphDotDump) RenderAsList(includePrereqs bool) string {
 			lines = append(lines, fmt.Sprintf("  %s: %s", prereq, status))
 		}
 	}
-	lines = append(lines, "")
+	lines = append(lines, "", "")
 	for task, taskInfo := range g.Tasks {
 		lines = append(lines, fmt.Sprintf("%s: %s", task, taskInfo.Status))
-		for _, prereq := range taskInfo.Prereqs {
-			lines = append(lines, "  (prq): "+prereq)
+		if includePrereqs {
+			for _, prereq := range taskInfo.Prereqs {
+				lines = append(lines, "  (prq): "+prereq)
+			}
 		}
 		for _, dep := range taskInfo.Deps {
 			lines = append(lines, "  "+dep)
 		}
+		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -108,14 +112,14 @@ func (g *GraphDotDump) RenderAsDot(includePrereqs bool) string {
 			if isSatisfied {
 				color = "green"
 			}
-			lines = append(lines, fmt.Sprintf(`  "%s" [color="%s"];`, prereq, color))
+			lines = append(lines, fmt.Sprintf(`  "%s" [color="%s",penwidth=2,style="dashed"];`, prereq, color))
 		}
 	}
 	for task, taskInfo := range g.Tasks {
-		lines = append(lines, fmt.Sprintf(`  "%s" [color=%s];`, task, taskInfo.Status.Color()))
+		lines = append(lines, fmt.Sprintf(`  "%s" [color=%s,penwidth=5];`, task, taskInfo.Status.Color()))
 		if includePrereqs {
 			for _, prereq := range taskInfo.Prereqs {
-				lines = append(lines, fmt.Sprintf(`  "%s" -> "%s";`, task, prereq))
+				lines = append(lines, fmt.Sprintf(`  "%s" -> "%s" [style="dashed"];`, task, prereq))
 			}
 		}
 		for _, to := range taskInfo.Deps {
