@@ -2,9 +2,7 @@ package task_runner
 
 import (
 	"encoding/json"
-	"fmt"
 	"os/exec"
-	"strings"
 )
 
 type Task interface {
@@ -21,25 +19,6 @@ type Task interface {
 
 	// For convenient JSON serialization
 	TaskJSONObject() map[string]interface{}
-}
-
-func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
-	f(currentTask, depth)
-	for _, dep := range currentTask.TaskDependencies() {
-		traverseHelp(dep, depth+1, f)
-	}
-}
-
-// TaskTraverse executes a preorder DFS of the task graph.
-//   TODO add support for dupe/cycle detection?
-func TaskTraverse(t Task, f func(Task, int)) {
-	traverseHelp(t, 0, f)
-}
-
-func TaskDebugPrint(rootTask Task) {
-	TaskTraverse(rootTask, func(currentTask Task, level int) {
-		fmt.Printf("%s%s: %p, %p\n", strings.Repeat(" ", level*2), currentTask.TaskName(), currentTask, &currentTask)
-	})
 }
 
 type FunctionTask struct {

@@ -34,6 +34,13 @@ func taskGraph() Task {
 }
 
 func main() {
+	//basicExample()
+	idempotentExample()
+	//parallelExample()
+	//runAndPrintExample()
+}
+
+func basicExample() {
 	a := taskGraph()
 	TaskDebugPrint(a)
 
@@ -49,12 +56,11 @@ func main() {
 		}
 		fmt.Printf("%s: %s - %s\n", currentTask.TaskName(), strings.Repeat(" ", level*2), annotation)
 	})
+}
 
-	idempotentExample()
-	parallelExample()
-
+func runAndPrintExample() {
 	cmd := exec.Command("ls", "-al")
-	err = RunCommandAndPrint(cmd)
+	err := RunCommandAndPrint(cmd)
 	doOrDie(err)
 }
 
@@ -101,6 +107,10 @@ func idempotentExample() {
 		),
 	)
 
+	fmt.Printf("dot graph before:\n%s\n", TaskToDotFormat(a).RenderAsDot())
+
+	fmt.Printf("list before:\n%s\n", TaskToDotFormat(a).RenderAsList())
+
 	TaskDebugPrint(a)
 
 	tr := SimpleTaskRunner{}
@@ -115,4 +125,8 @@ func idempotentExample() {
 		}
 		fmt.Printf("%s%s: %s\n", strings.Repeat(" ", level*2), currentTask.TaskName(), annotation)
 	})
+
+	fmt.Printf("dot graph after:\n%s\n", TaskToDotFormat(a).RenderAsDot())
+
+	fmt.Printf("list after:\n%s\n", TaskToDotFormat(a).RenderAsList())
 }
