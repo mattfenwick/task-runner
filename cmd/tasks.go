@@ -107,6 +107,9 @@ func idempotentExample() {
 		),
 	)
 
+	err := TaskToGraphDump(a).ToDot(true)
+	doOrDie(err)
+
 	fmt.Printf("dot graph before:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
 	fmt.Printf("list before:\n%s\n", TaskToGraphDump(a).RenderAsList(true))
