@@ -107,7 +107,10 @@ func idempotentExample() {
 		),
 	)
 
-	err := TaskToGraphDump(a).ToDot(true)
+	path := "example-graph.png"
+	err := TaskToGraphDump(a).ToDot(path, true)
+	doOrDie(err)
+	_, err = RunCommand(exec.Command("open", path))
 	doOrDie(err)
 
 	fmt.Printf("dot graph before:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))

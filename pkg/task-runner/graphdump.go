@@ -13,21 +13,21 @@ import (
 type GraphDumpTaskStatus string
 
 const (
-	GraphDotTaskStatusNotReady GraphDumpTaskStatus = "NotReady"
-	GraphDotTaskStatusReady    GraphDumpTaskStatus = "Ready"
-	GraphDotTaskStatusDone     GraphDumpTaskStatus = "Done"
-	GraphDotTaskStatusUnknown  GraphDumpTaskStatus = "Unknown"
+	GraphDumpTaskStatusNotReady GraphDumpTaskStatus = "NotReady"
+	GraphDumpTaskStatusReady    GraphDumpTaskStatus = "Ready"
+	GraphDumpTaskStatusDone     GraphDumpTaskStatus = "Done"
+	GraphDumpTaskStatusUnknown  GraphDumpTaskStatus = "Unknown"
 )
 
 func (gs GraphDumpTaskStatus) Color() string {
 	switch gs {
-	case GraphDotTaskStatusNotReady:
+	case GraphDumpTaskStatusNotReady:
 		return "red"
-	case GraphDotTaskStatusReady:
+	case GraphDumpTaskStatusReady:
 		return "yellow"
-	case GraphDotTaskStatusDone:
+	case GraphDumpTaskStatusDone:
 		return "green"
-	case GraphDotTaskStatusUnknown:
+	case GraphDumpTaskStatusUnknown:
 		return "orange" // TODO weird choice, maybe this should be something different?
 	default:
 		panic(errors.Errorf("invalid GraphDumpTaskStatus: %s", gs))
@@ -113,7 +113,7 @@ func (g *GraphDump) RenderAsDot(includePrereqs bool) string {
 	return strings.Join(append(lines, "}"), "\n")
 }
 
-func (g *GraphDump)ToDot(path string, includePrereqs bool) error {
+func (g *GraphDump) ToDot(path string, includePrereqs bool) error {
 	gv := graphviz.New()
 	graph, err := gv.Graph()
 	if err != nil {
@@ -121,10 +121,10 @@ func (g *GraphDump)ToDot(path string, includePrereqs bool) error {
 	}
 	defer func() {
 		if err := graph.Close(); err != nil {
-			log.Fatalf("+v", errors.Wrapf(err, "unable to close graph"))
+			log.Fatalf("%+v", errors.Wrapf(err, "unable to close graph"))
 		}
 		if err := gv.Close(); err != nil {
-			log.Fatalf("+v", errors.Wrapf(err, "unable to close graphviz"))
+			log.Fatalf("%+v", errors.Wrapf(err, "unable to close graphviz"))
 		}
 	}()
 
@@ -182,7 +182,7 @@ func (g *GraphDump)ToDot(path string, includePrereqs bool) error {
 	//fmt.Println(buf.String())
 
 	if err := gv.RenderFilename(graph, graphviz.PNG, path); err != nil {
-		return errors.Wrapf(err, "unable to write graph to file '%s'", )
+		return errors.Wrapf(err, "unable to write graph to file '%s'", path)
 	}
 
 	return nil

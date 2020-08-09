@@ -40,19 +40,19 @@ func TaskToGraphDump(rootTask Task) *GraphDump {
 		var status GraphDumpTaskStatus
 		isDone, err := currentTask.TaskIsDone()
 		if err != nil {
-			status = GraphDotTaskStatusUnknown
+			status = GraphDumpTaskStatusUnknown
 		} else if isDone {
-			status = GraphDotTaskStatusDone
+			status = GraphDumpTaskStatusDone
 		} else {
-			status = GraphDotTaskStatusReady
+			status = GraphDumpTaskStatusReady
 		}
 		var prereqs []string
 		for _, prereq := range currentTask.TaskPrereqs() {
 			if _, ok := dump.Prereqs[prereq.PrereqName()]; !ok {
 				dump.Prereqs[prereq.PrereqName()] = prereq.PrereqRun() == nil
 			}
-			if status == GraphDotTaskStatusReady && !dump.Prereqs[prereq.PrereqName()] {
-				status = GraphDotTaskStatusNotReady
+			if status == GraphDumpTaskStatusReady && !dump.Prereqs[prereq.PrereqName()] {
+				status = GraphDumpTaskStatusNotReady
 			}
 			prereqs = append(prereqs, prereq.PrereqName())
 		}
