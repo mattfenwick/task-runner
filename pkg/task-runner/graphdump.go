@@ -113,8 +113,14 @@ func (g *GraphDump) RenderAsDot(includePrereqs bool) string {
 	return strings.Join(append(lines, "}"), "\n")
 }
 
-func (g *GraphDump) ToDot(path string, includePrereqs bool) error {
+func (g *GraphDump) ToDot(path string, format graphviz.Format, includePrereqs bool) error {
+	return g.ToDotWithLayout(path, format, graphviz.DOT, includePrereqs)
+}
+
+func (g *GraphDump) ToDotWithLayout(path string, format graphviz.Format, layout graphviz.Layout, includePrereqs bool) error {
 	gv := graphviz.New()
+	gv.SetLayout(layout)
+
 	graph, err := gv.Graph()
 	if err != nil {
 		return errors.Wrapf(err, "unable to instantiate graphviz graph")
@@ -181,7 +187,7 @@ func (g *GraphDump) ToDot(path string, includePrereqs bool) error {
 	//}
 	//fmt.Println(buf.String())
 
-	if err := gv.RenderFilename(graph, graphviz.PNG, path); err != nil {
+	if err := gv.RenderFilename(graph, format, path); err != nil {
 		return errors.Wrapf(err, "unable to write graph to file '%s'", path)
 	}
 

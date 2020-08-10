@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/goccy/go-graphviz"
 	"github.com/mattfenwick/task-runner/pkg/examples"
 	. "github.com/mattfenwick/task-runner/pkg/task-runner"
 	log "github.com/sirupsen/logrus"
@@ -107,11 +108,33 @@ func idempotentExample() {
 		),
 	)
 
-	path := "example-graph.png"
-	err := TaskToGraphDump(a).ToDot(path, true)
-	doOrDie(err)
-	_, err = RunCommand(exec.Command("open", path))
-	doOrDie(err)
+	for _, format := range []graphviz.Format{
+		graphviz.JPG,
+		graphviz.PNG,
+		graphviz.SVG,
+		graphviz.XDOT,
+	} {
+		path := fmt.Sprintf("example-graph.%s", string(format))
+		err := TaskToGraphDump(a).ToDot(path, format, true)
+		doOrDie(err)
+	}
+
+	for _, layout := range []graphviz.Layout{
+		graphviz.CIRCO,
+		graphviz.DOT,
+		graphviz.FDP,
+		graphviz.NEATO,
+		graphviz.OSAGE,
+		graphviz.PATCHWORK,
+		graphviz.SFDP,
+		graphviz.TWOPI,
+	} {
+		path := fmt.Sprintf("example-graph-%s.png", string(layout))
+		err := TaskToGraphDump(a).ToDotWithLayout(path, graphviz.PNG, layout, true)
+		doOrDie(err)
+		_, err = RunCommand(exec.Command("open", path))
+		doOrDie(err)
+	}
 
 	fmt.Printf("dot graph before:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
