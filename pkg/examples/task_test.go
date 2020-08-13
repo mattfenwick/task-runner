@@ -82,4 +82,26 @@ func RunTaskTests() {
 			})
 		})
 	})
+
+	Describe("RunOnceTask", func() {
+		It("runs once and then reports itself as done", func() {
+			runCount := 0
+			task := task_runner.NewRunOnceTask("abc", func() error {
+				runCount++
+				return nil
+			}, []task_runner.Task{}, []task_runner.Prereq{})
+
+			isDone, err := task.TaskIsDone()
+			Expect(err).To(Succeed())
+			Expect(isDone).To(BeFalse())
+			Expect(runCount).To(Equal(0))
+
+			Expect(task.TaskRun()).To(Succeed())
+
+			isDone, err = task.TaskIsDone()
+			Expect(err).To(Succeed())
+			Expect(isDone).To(BeTrue())
+			Expect(runCount).To(Equal(1))
+		})
+	})
 }

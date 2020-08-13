@@ -92,3 +92,23 @@ func NewShellTask(name string, cmd *exec.Cmd, deps []Task, prereqs []Prereq, isD
 	}
 	return NewFunctionTask(name, run, deps, prereqs, isDone)
 }
+
+func NewRunOnceTask(name string, run func() error, deps []Task, prereqs []Prereq) *FunctionTask {
+	isDone := false
+	return &FunctionTask{
+		Name: name,
+		Run: func() error {
+			err := run()
+			if err != nil {
+				return err
+			}
+			isDone = true
+			return nil
+		},
+		Deps:    deps,
+		Prereqs: prereqs,
+		IsDone: func() (bool, error) {
+			return isDone, nil
+		},
+	}
+}
