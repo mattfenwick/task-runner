@@ -4,38 +4,8 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"strings"
+	"time"
 )
-
-type SimpleTaskRunnerTaskState string
-
-const (
-	// SimpleTaskRunner just puts tasks in order -- it doesn't actually know if a task is ready or not,
-	//   so it has no way to distinguish between 'Ready' and 'Waiting
-	//SimpleTaskRunnerTaskStateReady SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateReady"
-	// Similarly, since SimpleTaskRunner is single-threaded, there's no point in tracking whether a task
-	//   is in progress.  However, if another thread were able to observe execution progress, then this
-	//   state could be worth re-adding.
-	//SimpleTaskRunnerTaskStateInProgress SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateInProgress"
-	SimpleTaskRunnerTaskStateWaiting  SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateWaiting"
-	SimpleTaskRunnerTaskStateFailed   SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateFailed"
-	SimpleTaskRunnerTaskStateSkipped  SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateSkipped"
-	SimpleTaskRunnerTaskStateComplete SimpleTaskRunnerTaskState = "SimpleTaskRunnerTaskStateComplete"
-)
-
-func (s SimpleTaskRunnerTaskState) String() string {
-	switch s {
-	case SimpleTaskRunnerTaskStateWaiting:
-		return "Waiting"
-	case SimpleTaskRunnerTaskStateFailed:
-		return "Failed"
-	case SimpleTaskRunnerTaskStateSkipped:
-		return "Skipped"
-	case SimpleTaskRunnerTaskStateComplete:
-		return "Complete"
-	default:
-		panic(errors.Errorf("invalid SimpleTaskRunnerTaskState value %s", string(s)))
-	}
-}
 
 // SimpleTaskRunner performs a DFS on a task graph to find a valid execution order, then
 // executes tasks one at a time.  It does not execute tasks in parallel.  It does not
@@ -53,21 +23,21 @@ func (s SimpleTaskRunnerTaskState) String() string {
 // Tasks cannot be added after execution begins.
 type SimpleTaskRunner struct{}
 
-func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bool) (map[string]SimpleTaskRunnerTaskState, error) {
+func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bool) (map[string]*TaskRunResult, error) {
 	taskOrder, prereqs, err := TaskLinearize(task)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "unable to linearize tasks under task %s", task.TaskName())
 	}
 
-	taskStates := map[string]SimpleTaskRunnerTaskState{}
+	taskResults := map[string]*TaskRunResult{}
 	for _, t := range taskOrder {
-		taskStates[t.TaskName()] = SimpleTaskRunnerTaskStateWaiting
+		taskResults[t.TaskName()] = &TaskRunResult{Task: t, State: TaskStateWaiting}
 	}
-	log.Debugf("task states: %+v", taskStates)
+	log.Debugf("task states: %+v", taskResults)
 
 	if runAllPrereqsImmediately {
 		log.Debugf("running %d prereqs immediately", len(prereqs))
-		errs := []string{}
+		var errs []string
 		for _, p := range prereqs {
 			log.Debugf("running prereq %s", p.PrereqName())
 			err := p.PrereqRun()
@@ -76,39 +46,39 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 			}
 		}
 		if len(errs) > 0 {
-			return taskStates, errors.Errorf("%d prereqs failed: [%s]", len(errs), strings.Join(errs, ", "))
+			return taskResults, errors.Errorf("%d prereqs failed: [%s]", len(errs), strings.Join(errs, ", "))
 		}
 		log.Debugf("all %d prereqs succeeded", len(prereqs))
 	}
 
 	for _, task := range taskOrder {
-		err = tr.runTask(task, taskStates)
+		startTime := time.Now()
+		state, err := tr.runTask(task)
+		taskResults[task.TaskName()].Duration = time.Since(startTime)
+		taskResults[task.TaskName()].State = state
 		if err != nil {
-			return taskStates, err
+			return taskResults, err
 		}
 	}
-	return taskStates, nil
+	return taskResults, nil
 }
 
-func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskRunnerTaskState) error {
+func (tr *SimpleTaskRunner) runTask(task Task) (TaskState, error) {
 	// If a task is already done, then don't run it.
 	isDone, err := task.TaskIsDone()
 	if err != nil {
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-		return err
+		return TaskStateFailed, err
 	}
 	if isDone {
 		log.Debugf("skipping task %s, already done", task.TaskName())
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateSkipped
-		return nil
+		return TaskStateSkipped, nil
 	}
 
 	// Make sure all the prerequisites for a task are met.
 	for _, p := range task.TaskPrereqs() {
 		log.Debugf("checking prereq %s of task %s", p.PrereqName(), task.TaskName())
 		if err := p.PrereqRun(); err != nil {
-			taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-			return errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), task.TaskName())
+			return TaskStateFailed, errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), task.TaskName())
 		}
 		log.Debugf("prereq %s of task %s is good to go", p.PrereqName(), task.TaskName())
 	}
@@ -117,24 +87,20 @@ func (tr *SimpleTaskRunner) runTask(task Task, taskStates map[string]SimpleTaskR
 	log.Debugf("running task %s", task.TaskName())
 	err = task.TaskRun()
 	if err != nil {
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-		return errors.WithMessagef(err, "failed to run task %s", task.TaskName())
+		return TaskStateFailed, errors.WithMessagef(err, "failed to run task %s", task.TaskName())
 	}
 
 	// After running a task, make sure that it considers itself to be done.
 	isDone, err = task.TaskIsDone()
 	if err != nil {
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-		return errors.WithMessagef(err, "task %s failed post-execution IsDone check", task.TaskName())
+		return TaskStateFailed, errors.WithMessagef(err, "task %s failed post-execution IsDone check", task.TaskName())
 	}
 	if !isDone {
-		taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateFailed
-		return errors.Errorf("ran task %s but it still reports itself as not done", task.TaskName())
+		return TaskStateFailed, errors.Errorf("ran task %s but it still reports itself as not done", task.TaskName())
 	}
 
 	log.Debugf("finished running task %s", task.TaskName())
-	taskStates[task.TaskName()] = SimpleTaskRunnerTaskStateComplete
-	return nil
+	return TaskStateComplete, nil
 }
 
 func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress map[string]bool, stack []string, taskNamesToIds map[string]string) ([]Task, error) {

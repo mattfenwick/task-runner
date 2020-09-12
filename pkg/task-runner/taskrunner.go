@@ -1,5 +1,5 @@
 package task_runner
 
 type TaskRunner interface {
-	TaskRunnerRun(task Task) error
+	TaskRunnerRun(task Task) (map[string]*TaskRunResult, error)
 }
