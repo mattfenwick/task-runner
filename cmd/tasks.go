@@ -69,7 +69,7 @@ func parallelExample() {
 	a := taskGraph()
 	wg := &sync.WaitGroup{}
 	wg.Add(5)
-	runner := NewParallelTaskRunner(5, func(task Task, state TaskState, err error) {
+	runner := NewParallelTaskRunner(5, func(task Task, state TaskState) {
 		wg.Done()
 	})
 	doOrDie(runner.AddTask(a))

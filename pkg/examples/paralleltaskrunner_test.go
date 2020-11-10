@@ -8,7 +8,32 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"sync"
+	"time"
 )
+
+// waitTimeout leaks goroutines, don't use it in prod code!
+// https://stackoverflow.com/questions/32840687/timeout-for-waitgroup-wait
+// It's not super great in tests either :|
+func waitTimeout(wg *sync.WaitGroup, timeoutSeconds int) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false
+	case <-time.After(time.Duration(timeoutSeconds) * time.Second):
+		return true
+	}
+}
+
+func didUpdateTaskState(wg *sync.WaitGroup) func(t task_runner.Task, s task_runner.TaskState) {
+	return func(t task_runner.Task, s task_runner.TaskState) {
+		log.Infof("ParallelTaskRunner: finish %s, %s", t.TaskName(), s.String())
+		wg.Done()
+	}
+}
 
 func RunParallelTaskRunnerTests() {
 	Describe("ParallelTaskRunner", func() {
@@ -17,16 +42,12 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(5)
-			didFinishTask := func(t task_runner.Task, s task_runner.TaskState, err error) {
-				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
-				wg.Done()
-			}
-			runner := task_runner.NewParallelTaskRunner(2, didFinishTask)
+			runner := task_runner.NewParallelTaskRunner(2, didUpdateTaskState(wg))
 
 			Expect(runner.AddTask(t)).To(Succeed())
 			Expect(runner.Start()).To(Succeed())
 
-			wg.Wait()
+			waitTimeout(wg, 10)
 			for _, s := range []string{"a", "b", "c", "d", "e"} {
 				Expect(dict[s]).To(BeTrue())
 			}
@@ -40,8 +61,8 @@ func RunParallelTaskRunnerTests() {
 			wg := &sync.WaitGroup{}
 			wg.Add(5)
 			states := map[string]task_runner.TaskState{}
-			didFinishTask := func(t task_runner.Task, s task_runner.TaskState, err error) {
-				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
+			didFinishTask := func(t task_runner.Task, s task_runner.TaskState) {
+				log.Infof("ParallelTaskRunner: finish %s, %s", t.TaskName(), s.String())
 				states[t.TaskName()] = s
 				wg.Done()
 			}
@@ -55,7 +76,7 @@ func RunParallelTaskRunnerTests() {
 			//Expect(err).To(Succeed())
 			//fmt.Printf("%s\n", jbytes)
 
-			wg.Wait()
+			waitTimeout(wg, 10)
 
 			for _, s := range []string{"a", "b", "c", "d"} {
 				Expect(dict).To(HaveKeyWithValue(s, true))
@@ -79,8 +100,8 @@ func RunParallelTaskRunnerTests() {
 			wg := &sync.WaitGroup{}
 			wg.Add(2)
 			states := map[string]task_runner.TaskState{}
-			runner := task_runner.NewParallelTaskRunner(2, func(t task_runner.Task, s task_runner.TaskState, err error) {
-				log.Infof("ParallelTaskRunner: finish %s, %s, %+v", t.TaskName(), s.String(), err)
+			runner := task_runner.NewParallelTaskRunner(2, func(t task_runner.Task, s task_runner.TaskState) {
+				log.Infof("ParallelTaskRunner: finish %s, %s", t.TaskName(), s.String())
 				states[t.TaskName()] = s
 				wg.Done()
 			})
@@ -91,7 +112,7 @@ func RunParallelTaskRunnerTests() {
 			Expect(err).To(Succeed())
 			//Expect(err.Error()).To(MatchRegexp("prereq 'prereq-keycheck-task-setkey-d' failed for task task-setkey-d: key d already in dict"))
 
-			wg.Wait()
+			waitTimeout(wg, 10)
 			// only d runs
 			Expect(dict).To(HaveKeyWithValue("d", true))
 			// everything else fails
@@ -114,14 +135,12 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := task_runner.NewParallelTaskRunner(2, func(task task_runner.Task, state task_runner.TaskState, err error) {
-				wg.Done()
-			})
+			runner := task_runner.NewParallelTaskRunner(2, didUpdateTaskState(wg))
 
 			Expect(runner.AddTask(t)).To(Succeed())
-			runner.Start()
+			Expect(runner.Start()).To(Succeed())
 
-			wg.Wait()
+			waitTimeout(wg, 10)
 
 			Expect(runner.Tasks["task-isdone-failure"].State).To(Equal(task_runner.TaskStateFailed))
 		})
@@ -147,13 +166,11 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := task_runner.NewParallelTaskRunner(2, func(task task_runner.Task, state task_runner.TaskState, err error) {
-				wg.Done()
-			})
+			runner := task_runner.NewParallelTaskRunner(2, didUpdateTaskState(wg))
 
 			Expect(runner.AddTask(t)).To(Succeed())
 			Expect(runner.Start()).To(Succeed())
-			wg.Wait()
+			waitTimeout(wg, 10)
 
 			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(task_runner.TaskStateFailed))
 		})
@@ -163,13 +180,11 @@ func RunParallelTaskRunnerTests() {
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			runner := task_runner.NewParallelTaskRunner(2, func(task task_runner.Task, state task_runner.TaskState, err error) {
-				wg.Done()
-			})
+			runner := task_runner.NewParallelTaskRunner(2, didUpdateTaskState(wg))
 
 			Expect(runner.AddTask(t)).To(Succeed())
 			Expect(runner.Start()).To(Succeed())
-			wg.Wait()
+			waitTimeout(wg, 10)
 
 			Expect(runner.Tasks["task-runIsDoneFailureTask-task-isdone-false"].State).To(Equal(task_runner.TaskStateFailed))
 		})
@@ -180,13 +195,11 @@ func RunParallelTaskRunnerTests() {
 
 				wg := &sync.WaitGroup{}
 				wg.Add(2)
-				runner := task_runner.NewParallelTaskRunner(2, func(task task_runner.Task, state task_runner.TaskState, err error) {
-					wg.Done()
-				})
+				runner := task_runner.NewParallelTaskRunner(2, didUpdateTaskState(wg))
 
 				Expect(runner.AddTask(t)).To(Succeed())
 				Expect(runner.Start()).To(Succeed())
-				wg.Wait()
+				waitTimeout(wg, 10)
 
 				// only d runs
 				Expect(dict).To(HaveKeyWithValue("d", true))

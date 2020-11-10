@@ -4,12 +4,14 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"sync"
+	"time"
 )
 
 type RunnerTask struct {
-	State TaskState
-	Task  Task
-	Id    string
+	State    TaskState
+	Task     Task
+	Id       string
+	Duration time.Duration
 	// UpstreamDeps: what unfinished tasks do I depend on?
 	// When the number of UpstreamDeps goes to 0, the Task is ready to run and is added to the `Ready` queue.
 	UpstreamDeps map[string]bool
@@ -17,7 +19,7 @@ type RunnerTask struct {
 	DownstreamDeps map[string]bool
 }
 
-type DidFinishTask func(Task, TaskState, error)
+type DidUpdateTaskState func(Task, TaskState)
 
 type ParallelTaskRunnerState string
 
@@ -28,28 +30,32 @@ const (
 )
 
 type ParallelTaskRunner struct {
-	State         ParallelTaskRunnerState
-	Tasks         map[string]*RunnerTask
-	Concurrency   int
-	didFinishTask DidFinishTask
-	stopChan      chan struct{}
-	actions       chan func()
-	readyTasks    chan string
+	State              ParallelTaskRunnerState
+	Tasks              map[string]*RunnerTask
+	Concurrency        int
+	didUpdateTaskState DidUpdateTaskState
+	stopChan           chan struct{}
+	actions            chan func()
+	readyTasks         chan string
 }
 
-func NewParallelTaskRunner(concurrency int, didFinishTask DidFinishTask) *ParallelTaskRunner {
-	return NewParallelTaskRunnerWithQueueSize(concurrency, didFinishTask, 1000)
+func NewDefaultParallelTaskRunner(concurrency int) *ParallelTaskRunner {
+	return NewParallelTaskRunner(concurrency, nil)
 }
 
-func NewParallelTaskRunnerWithQueueSize(concurrency int, didFinishTask DidFinishTask, queueSize int) *ParallelTaskRunner {
+func NewParallelTaskRunner(concurrency int, didUpdateTaskState DidUpdateTaskState) *ParallelTaskRunner {
+	return NewParallelTaskRunnerWithQueueSize(concurrency, didUpdateTaskState, 1000)
+}
+
+func NewParallelTaskRunnerWithQueueSize(concurrency int, didUpdateTaskState DidUpdateTaskState, queueSize int) *ParallelTaskRunner {
 	runner := &ParallelTaskRunner{
-		State:         ParallelTaskRunnerStatePrepared,
-		Tasks:         map[string]*RunnerTask{},
-		Concurrency:   concurrency,
-		didFinishTask: didFinishTask,
-		stopChan:      make(chan struct{}),
-		actions:       make(chan func()),
-		readyTasks:    make(chan string, queueSize),
+		State:              ParallelTaskRunnerStatePrepared,
+		Tasks:              map[string]*RunnerTask{},
+		Concurrency:        concurrency,
+		didUpdateTaskState: didUpdateTaskState,
+		stopChan:           make(chan struct{}),
+		actions:            make(chan func()),
+		readyTasks:         make(chan string, queueSize),
 	}
 	go func() {
 		for {
@@ -96,6 +102,10 @@ func (runner *ParallelTaskRunner) setTaskStateAction(taskName string, state Task
 			panic(errors.Errorf("task %s already in state %s", taskName, state.String()))
 		}
 		taskState.State = state
+
+		if runner.didUpdateTaskState != nil {
+			go runner.didUpdateTaskState(taskState.Task, taskState.State)
+		}
 	}
 }
 
@@ -130,18 +140,33 @@ func (runner *ParallelTaskRunner) startTaskAction(taskName string) Task {
 		runnerTask.State = TaskStateInProgress
 		task = runnerTask.Task
 		wg.Done()
+
+		if runner.didUpdateTaskState != nil {
+			go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
+		}
 	}
 	wg.Wait()
 	return task
 }
 
-func (runner *ParallelTaskRunner) markTaskCompleteAction(taskName string) {
+func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state TaskState, err error, duration time.Duration) {
+	if err != nil {
+		// TODO anything else to do here?
+		log.Errorf("failed to run task %s: %+v", taskName, err)
+	} else {
+		if !(state == TaskStateSkipped || state == TaskStateComplete) {
+			panic(errors.Errorf("expected task state Skipped or Complete, found %s", state.String()))
+		}
+	}
+
 	// Any tasks that depend on this one, now have one less dependency blocking their execution.
 	// If anything gets down to 0, queue it up!
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	runner.actions <- func() {
 		runnerTask := runner.Tasks[taskName]
+		runnerTask.State = state
+		runnerTask.Duration = duration
 		for downstreamName := range runnerTask.DownstreamDeps {
 			downstream := runner.Tasks[downstreamName]
 			delete(downstream.UpstreamDeps, taskName)
@@ -154,6 +179,10 @@ func (runner *ParallelTaskRunner) markTaskCompleteAction(taskName string) {
 			}
 		}
 		wg.Done()
+
+		if runner.didUpdateTaskState != nil {
+			go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
+		}
 	}
 	wg.Wait()
 }
@@ -168,6 +197,10 @@ func (runner *ParallelTaskRunner) addNewTasksAction(tasks map[string]*RunnerTask
 			if len(runnerTask.UpstreamDeps) == 0 {
 				runnerTask.State = TaskStateReady
 				runner.readyTasks <- name
+
+				if runner.didUpdateTaskState != nil {
+					go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
+				}
 			}
 		}
 		wg.Done()
@@ -240,27 +273,24 @@ func (runner *ParallelTaskRunner) stopAction() error {
 
 // running a task
 
-func (runner *ParallelTaskRunner) runTaskHelper(task Task) error {
+func runTaskHelper(task Task) (TaskState, error) {
 	taskName := task.TaskName()
 
 	// If a task is already done, then don't run it.
 	isDone, err := task.TaskIsDone()
 	if err != nil {
-		runner.setTaskStateAction(taskName, TaskStateFailed)
-		return err
+		return TaskStateFailed, err
 	}
 	if isDone {
 		log.Debugf("skipping task %s, already done", taskName)
-		runner.setTaskStateAction(taskName, TaskStateSkipped)
-		return nil
+		return TaskStateSkipped, nil
 	}
 
 	// Make sure all the prerequisites for a task are met.
 	for _, p := range task.TaskPrereqs() {
 		log.Debugf("checking prereq %s of task %s", p.PrereqName(), taskName)
 		if err := p.PrereqRun(); err != nil {
-			runner.setTaskStateAction(taskName, TaskStateFailed)
-			return errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), taskName)
+			return TaskStateFailed, errors.WithMessagef(err, "prereq '%s' failed for task %s", p.PrereqName(), taskName)
 		}
 		log.Debugf("prereq %s of task %s is good to go", p.PrereqName(), taskName)
 	}
@@ -269,44 +299,28 @@ func (runner *ParallelTaskRunner) runTaskHelper(task Task) error {
 	log.Debugf("running task %s", taskName)
 	err = task.TaskRun()
 	if err != nil {
-		runner.setTaskStateAction(taskName, TaskStateFailed)
-		return errors.WithMessagef(err, "failed to run task %s", taskName)
+		return TaskStateFailed, errors.WithMessagef(err, "failed to run task %s", taskName)
 	}
 	log.Debugf("finished running task %s", taskName)
 
 	// After running a task, make sure that it considers itself to be done.
 	isDone, err = task.TaskIsDone()
 	if err != nil {
-		runner.setTaskStateAction(taskName, TaskStateFailed)
-		return errors.WithMessagef(err, "task %s failed post-execution IsDone check", taskName)
+		return TaskStateFailed, errors.WithMessagef(err, "task %s failed post-execution IsDone check", taskName)
 	}
 	if !isDone {
-		runner.setTaskStateAction(taskName, TaskStateFailed)
-		return errors.Errorf("ran task %s but it still reports itself as not done", taskName)
+		return TaskStateFailed, errors.Errorf("ran task %s but it still reports itself as not done", taskName)
 	}
 
-	runner.setTaskStateAction(taskName, TaskStateComplete)
-	return nil
+	return TaskStateComplete, nil
 }
 
 func (runner *ParallelTaskRunner) runTask(taskName string) {
 	task := runner.startTaskAction(taskName)
 
-	err := runner.runTaskHelper(task)
-	state := runner.getTaskStateAction(taskName)
-	if err != nil {
-		// TODO anything else to do here?
-		log.Errorf("failed to run task %s: %+v", taskName, err)
-	} else {
-		if !(state == TaskStateSkipped || state == TaskStateComplete) {
-			panic(errors.Errorf("expected task state Skipped or Complete, found %s", state.String()))
-		}
-		runner.markTaskCompleteAction(taskName)
-	}
-
-	if runner.didFinishTask != nil {
-		runner.didFinishTask(task, state, err)
-	}
+	start := time.Now()
+	state, err := runTaskHelper(task)
+	runner.didFinishTaskAction(taskName, state, err, time.Since(start))
 }
 
 func (runner *ParallelTaskRunner) AddTask(task Task) error {
