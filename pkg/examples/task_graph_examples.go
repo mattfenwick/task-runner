@@ -29,9 +29,15 @@ func NonTrivialCycleGraph() task_runner.Task {
 	d.TaskAddDependency(a)
 	return a
 }
+
 func SetKeyOnceGraph() (map[string]bool, task_runner.Task) {
 	ran := map[string]bool{}
 	mux := &sync.Mutex{}
+	/*
+		a -> b -> d -> e
+		a -> c
+		a -> d
+	*/
 	d := SetKeyTask("d", "d", mux, ran,
 		SetKeyTask("e", "e", mux, ran))
 	a := SetKeyTask("a", "a", mux, ran,

@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/mattfenwick/task-runner/pkg/examples"
 	. "github.com/mattfenwick/task-runner/pkg/task-runner"
 	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 func doOrDie(err error) {
@@ -67,14 +67,11 @@ func runAndPrintExample() {
 func parallelExample() {
 	fmt.Printf("\n\nparallel example:\n")
 	a := taskGraph()
-	wg := &sync.WaitGroup{}
-	wg.Add(5)
-	runner := NewParallelTaskRunner(5, func(task Task, state TaskState) {
-		wg.Done()
-	})
-	doOrDie(runner.AddTask(a))
-	doOrDie(runner.Start())
-	wg.Wait()
+	runner, err := NewDefaultParallelTaskRunner(a, 5)
+	doOrDie(err)
+	taskResults := runner.Wait(context.TODO())
+
+	log.Infof("task results: %+v", taskResults)
 
 	TaskDebugPrint(a)
 

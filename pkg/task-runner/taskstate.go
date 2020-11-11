@@ -8,8 +8,8 @@ type TaskState string
 //   canceled by caller or something
 //   parse out different kinds of failures (run, isdone, prereq, dep)
 const (
-	TaskStateReady      TaskState = "TaskStateReady"
 	TaskStateWaiting    TaskState = "TaskStateWaiting"
+	TaskStateReady      TaskState = "TaskStateReady"
 	TaskStateInProgress TaskState = "TaskStateInProgress"
 	TaskStateFailed     TaskState = "TaskStateFailed"
 	TaskStateSkipped    TaskState = "TaskStateSkipped"
@@ -18,10 +18,10 @@ const (
 
 func (s TaskState) String() string {
 	switch s {
-	case TaskStateReady:
-		return "Ready"
 	case TaskStateWaiting:
 		return "Waiting"
+	case TaskStateReady:
+		return "Ready"
 	case TaskStateInProgress:
 		return "InProgress"
 	case TaskStateFailed:

@@ -1,6 +1,7 @@
 package task_runner
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"sync"
@@ -8,10 +9,11 @@ import (
 )
 
 type RunnerTask struct {
-	State    TaskState
-	Task     Task
-	Id       string
-	Duration time.Duration
+	State  TaskState
+	Task   Task
+	Id     string
+	Start  time.Time
+	Finish time.Time
 	// UpstreamDeps: what unfinished tasks do I depend on?
 	// When the number of UpstreamDeps goes to 0, the Task is ready to run and is added to the `Ready` queue.
 	UpstreamDeps map[string]bool
@@ -19,44 +21,51 @@ type RunnerTask struct {
 	DownstreamDeps map[string]bool
 }
 
-type DidUpdateTaskState func(Task, TaskState)
+func (rt *RunnerTask) Duration() time.Duration {
+	return rt.Finish.Sub(rt.Start)
+}
 
 type ParallelTaskRunnerState string
 
 const (
-	ParallelTaskRunnerStatePrepared ParallelTaskRunnerState = "ParallelTaskRunnerStatePrepared"
 	ParallelTaskRunnerStateRunning  ParallelTaskRunnerState = "ParallelTaskRunnerStateRunning"
 	ParallelTaskRunnerStateStopped  ParallelTaskRunnerState = "ParallelTaskRunnerStateStopped"
+	ParallelTaskRunnerStateFinished ParallelTaskRunnerState = "ParallelTaskRunnerStateFinished"
 )
 
 type ParallelTaskRunner struct {
-	State              ParallelTaskRunnerState
-	Tasks              map[string]*RunnerTask
-	Concurrency        int
-	didUpdateTaskState DidUpdateTaskState
-	stopChan           chan struct{}
-	actions            chan func()
-	readyTasks         chan string
+	State           ParallelTaskRunnerState
+	Tasks           map[string]*RunnerTask
+	Concurrency     int
+	stopChan        chan struct{}
+	actions         chan func()
+	readyTasks      chan string
+	didFinish       chan struct{}
+	enqueuedTasks   map[string]bool
+	inprogressTasks map[string]bool
 }
 
-func NewDefaultParallelTaskRunner(concurrency int) *ParallelTaskRunner {
-	return NewParallelTaskRunner(concurrency, nil)
+func NewDefaultParallelTaskRunner(task Task, concurrency int) (*ParallelTaskRunner, error) {
+	return NewParallelTaskRunner(task, concurrency, 1000)
 }
 
-func NewParallelTaskRunner(concurrency int, didUpdateTaskState DidUpdateTaskState) *ParallelTaskRunner {
-	return NewParallelTaskRunnerWithQueueSize(concurrency, didUpdateTaskState, 1000)
-}
-
-func NewParallelTaskRunnerWithQueueSize(concurrency int, didUpdateTaskState DidUpdateTaskState, queueSize int) *ParallelTaskRunner {
+func NewParallelTaskRunner(task Task, concurrency int, queueSize int) (*ParallelTaskRunner, error) {
 	runner := &ParallelTaskRunner{
-		State:              ParallelTaskRunnerStatePrepared,
-		Tasks:              map[string]*RunnerTask{},
-		Concurrency:        concurrency,
-		didUpdateTaskState: didUpdateTaskState,
-		stopChan:           make(chan struct{}),
-		actions:            make(chan func()),
-		readyTasks:         make(chan string, queueSize),
+		State:           ParallelTaskRunnerStateRunning,
+		Tasks:           map[string]*RunnerTask{},
+		Concurrency:     concurrency,
+		stopChan:        make(chan struct{}),
+		actions:         make(chan func()),
+		readyTasks:      make(chan string, queueSize),
+		didFinish:       make(chan struct{}),
+		enqueuedTasks:   map[string]bool{},
+		inprogressTasks: map[string]bool{},
 	}
+	err := runner.addTask(task)
+	if err != nil {
+		return nil, err
+	}
+
 	go func() {
 		for {
 			var action func()
@@ -70,7 +79,42 @@ func NewParallelTaskRunnerWithQueueSize(concurrency int, didUpdateTaskState DidU
 			action()
 		}
 	}()
-	return runner
+	for i := 0; i < runner.Concurrency; i++ {
+		runner.createWorker()
+	}
+	return runner, nil
+}
+
+func (runner *ParallelTaskRunner) Stop() error {
+	return runner.stopAction()
+}
+
+func (runner *ParallelTaskRunner) Wait(ctx context.Context) map[string]*RunnerTask {
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-runner.didFinish:
+	}
+	return runner.Tasks
+}
+
+func (runner *ParallelTaskRunner) addTask(task Task) error {
+	// 1. build the task tables
+	//tasks, err := BuildDependencyTables(task)
+	tasks, err := BuildDependencyTablesIterative(task)
+	if err != nil {
+		return err
+	}
+	// 2. if everything checks out -- then add the new stuff
+	for name, runnerTask := range tasks {
+		runner.Tasks[name] = runnerTask
+		// no upstream dependencies?  ready to execute, queue it up!
+		if len(runnerTask.UpstreamDeps) == 0 {
+			runner.setTaskState(runnerTask, TaskStateReady)
+		}
+	}
+
+	return nil
 }
 
 func (runner *ParallelTaskRunner) createWorker() {
@@ -91,40 +135,6 @@ func (runner *ParallelTaskRunner) createWorker() {
 // 'actions' are serialized on a single goroutine, and should be the only things allowed to modify
 // internal state
 
-func (runner *ParallelTaskRunner) setTaskStateAction(taskName string, state TaskState) {
-	runner.actions <- func() {
-		taskState, ok := runner.Tasks[taskName]
-		if !ok {
-			panic(errors.Errorf("unable to find task %s", taskName))
-		}
-		if state == taskState.State {
-			// TODO also check for other disallowed transitions, i.e. Complete -> InProgress
-			panic(errors.Errorf("task %s already in state %s", taskName, state.String()))
-		}
-		taskState.State = state
-
-		if runner.didUpdateTaskState != nil {
-			go runner.didUpdateTaskState(taskState.Task, taskState.State)
-		}
-	}
-}
-
-func (runner *ParallelTaskRunner) getTaskStateAction(taskName string) TaskState {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var state TaskState
-	runner.actions <- func() {
-		runnerTask, ok := runner.Tasks[taskName]
-		if !ok {
-			panic(errors.Errorf("unable to find task %s", taskName))
-		}
-		state = runnerTask.State
-		wg.Done()
-	}
-	wg.Wait()
-	return state
-}
-
 // startTask synchronously moves the task state from Ready -> InProgress and returns the
 // underlying Task object
 func (runner *ParallelTaskRunner) startTaskAction(taskName string) Task {
@@ -137,19 +147,15 @@ func (runner *ParallelTaskRunner) startTaskAction(taskName string) Task {
 			panic(errors.Errorf("task %s in invalid state, expected Ready, got %s", taskName, runnerTask.State.String()))
 		}
 
-		runnerTask.State = TaskStateInProgress
+		runner.setTaskState(runnerTask, TaskStateInProgress)
 		task = runnerTask.Task
 		wg.Done()
-
-		if runner.didUpdateTaskState != nil {
-			go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
-		}
 	}
 	wg.Wait()
 	return task
 }
 
-func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state TaskState, err error, duration time.Duration) {
+func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state TaskState, err error, start time.Time, finish time.Time) {
 	if err != nil {
 		// TODO anything else to do here?
 		log.Errorf("failed to run task %s: %+v", taskName, err)
@@ -165,93 +171,30 @@ func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state Tas
 	wg.Add(1)
 	runner.actions <- func() {
 		runnerTask := runner.Tasks[taskName]
-		runnerTask.State = state
-		runnerTask.Duration = duration
-		for downstreamName := range runnerTask.DownstreamDeps {
-			downstream := runner.Tasks[downstreamName]
-			delete(downstream.UpstreamDeps, taskName)
-			if len(downstream.UpstreamDeps) == 0 {
-				if downstream.State != TaskStateWaiting {
-					panic(errors.Errorf("expected state Waiting for task %s, found %s", downstreamName, downstream.State.String()))
-				}
-				downstream.State = TaskStateReady
-				runner.readyTasks <- downstreamName
-			}
-		}
-		wg.Done()
+		runner.setTaskState(runnerTask, state)
+		runnerTask.Start = start
+		runnerTask.Finish = finish
 
-		if runner.didUpdateTaskState != nil {
-			go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
-		}
-	}
-	wg.Wait()
-}
-
-func (runner *ParallelTaskRunner) addNewTasksAction(tasks map[string]*RunnerTask) {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	runner.actions <- func() {
-		for name, runnerTask := range tasks {
-			runner.Tasks[name] = runnerTask
-			// no upstream dependencies?  ready to execute, queue it up!
-			if len(runnerTask.UpstreamDeps) == 0 {
-				runnerTask.State = TaskStateReady
-				runner.readyTasks <- name
-
-				if runner.didUpdateTaskState != nil {
-					go runner.didUpdateTaskState(runnerTask.Task, runnerTask.State)
+		if state == TaskStateComplete || state == TaskStateSkipped {
+			for downstreamName := range runnerTask.DownstreamDeps {
+				downstream := runner.Tasks[downstreamName]
+				delete(downstream.UpstreamDeps, taskName)
+				if len(downstream.UpstreamDeps) == 0 {
+					if downstream.State != TaskStateWaiting {
+						panic(errors.Errorf("expected state Waiting for task %s, found %s", downstreamName, downstream.State.String()))
+					}
+					runner.setTaskState(downstream, TaskStateReady)
 				}
 			}
 		}
-		wg.Done()
-	}
-	wg.Wait()
-}
 
-func (runner *ParallelTaskRunner) getTaskIdAction(taskName string) *string {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var id *string
-	runner.actions <- func() {
-		runnerTask, ok := runner.Tasks[taskName]
-		if ok {
-			*id = runnerTask.Id
+		if len(runner.inprogressTasks) == 0 && len(runner.enqueuedTasks) == 0 {
+			close(runner.didFinish)
 		}
-		wg.Done()
-	}
-	wg.Wait()
-	return id
-}
 
-func (runner *ParallelTaskRunner) getStateAction() ParallelTaskRunnerState {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var state ParallelTaskRunnerState
-	runner.actions <- func() {
-		state = runner.State
 		wg.Done()
 	}
 	wg.Wait()
-	return state
-}
-
-func (runner *ParallelTaskRunner) startAction() error {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var err error
-	runner.actions <- func() {
-		if runner.State == ParallelTaskRunnerStatePrepared {
-			runner.State = ParallelTaskRunnerStateRunning
-			for i := 0; i < runner.Concurrency; i++ {
-				runner.createWorker()
-			}
-		} else {
-			err = errors.Errorf("expected state Prepared, found state %s", runner.State)
-		}
-		wg.Done()
-	}
-	wg.Wait()
-	return err
 }
 
 func (runner *ParallelTaskRunner) stopAction() error {
@@ -320,40 +263,38 @@ func (runner *ParallelTaskRunner) runTask(taskName string) {
 
 	start := time.Now()
 	state, err := runTaskHelper(task)
-	runner.didFinishTaskAction(taskName, state, err, time.Since(start))
+	finish := time.Now()
+	runner.didFinishTaskAction(taskName, state, err, start, finish)
 }
 
-func (runner *ParallelTaskRunner) AddTask(task Task) error {
-	if runner.State == ParallelTaskRunnerStateStopped {
-		return errors.Errorf("unable to add task: runner is stopped")
+// not thread safe: be careful what calls these
+
+func (runner *ParallelTaskRunner) setTaskState(task *RunnerTask, state TaskState) {
+	name := task.Task.TaskName()
+	log.Debugf("setting task %s state to %s", name, state.String())
+
+	// cleanup on exiting previous state
+	switch task.State {
+	case TaskStateWaiting:
+	case TaskStateReady:
+		delete(runner.enqueuedTasks, name)
+	case TaskStateInProgress:
+		delete(runner.inprogressTasks, name)
+	case TaskStateFailed:
+	case TaskStateSkipped:
+	case TaskStateComplete:
 	}
-
-	// 1. build the task tables
-	//tasks, err := BuildDependencyTables(task)
-	tasks, err := BuildDependencyTablesIterative(task)
-	if err != nil {
-		return err
+	// entering new state
+	task.State = state
+	switch state {
+	case TaskStateWaiting:
+	case TaskStateReady:
+		runner.enqueuedTasks[name] = true
+		runner.readyTasks <- name
+	case TaskStateInProgress:
+		runner.inprogressTasks[name] = true
+	case TaskStateFailed:
+	case TaskStateSkipped:
+	case TaskStateComplete:
 	}
-	// 2. validate -- check that there's no duplicates between existing and new stuff
-	for name, runnerTask := range tasks {
-		if prevId := runner.getTaskIdAction(name); prevId != nil {
-			if *prevId != runnerTask.Id {
-				return errors.Errorf("can't add task of name %s and id %s, already present with id %s", name, runnerTask.Id, *prevId)
-			}
-			// otherwise, it's the same Task -- and that's okay: we're adding a new task
-			// with a dependency on an old task
-		}
-	}
-	// 3. if everything checks out -- then add the new stuff
-	runner.addNewTasksAction(tasks)
-
-	return nil
-}
-
-func (runner *ParallelTaskRunner) Start() error {
-	return runner.startAction()
-}
-
-func (runner *ParallelTaskRunner) Stop() error {
-	return runner.stopAction()
 }
