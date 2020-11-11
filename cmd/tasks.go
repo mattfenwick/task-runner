@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/mattfenwick/task-runner/pkg/examples"
 	. "github.com/mattfenwick/task-runner/pkg/task-runner"
 	log "github.com/sirupsen/logrus"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 func doOrDie(err error) {
@@ -46,13 +47,13 @@ func basicExample() {
 
 	tr := SimpleTaskRunner{}
 
-	statuses, err := tr.TaskRunnerRun(a, false)
+	results, err := tr.TaskRunnerRun(a, false)
 	doOrDie(err)
 
 	TaskTraverse(a, func(currentTask Task, level int) {
 		annotation := "unknown"
-		if anno, ok := statuses[currentTask.TaskName()]; ok {
-			annotation = string(anno)
+		if result, ok := results[currentTask.TaskName()]; ok {
+			annotation = string(result.State)
 		}
 		fmt.Printf("%s: %s - %s\n", currentTask.TaskName(), strings.Repeat(" ", level*2), annotation)
 	})
@@ -67,14 +68,11 @@ func runAndPrintExample() {
 func parallelExample() {
 	fmt.Printf("\n\nparallel example:\n")
 	a := taskGraph()
-	wg := &sync.WaitGroup{}
-	wg.Add(5)
-	runner := NewParallelTaskRunner(5, func(task Task, state TaskState, err error) {
-		wg.Done()
-	})
-	doOrDie(runner.AddTask(a))
-	doOrDie(runner.Start())
-	wg.Wait()
+	runner, err := NewDefaultParallelTaskRunner(a, 5)
+	doOrDie(err)
+	taskResults := runner.Wait(context.TODO())
+
+	log.Infof("task results: %+v", taskResults)
 
 	TaskDebugPrint(a)
 
@@ -115,13 +113,13 @@ func idempotentExample() {
 
 	tr := SimpleTaskRunner{}
 
-	statuses, err := tr.TaskRunnerRun(a, false)
+	results, err := tr.TaskRunnerRun(a, false)
 	doOrDie(err)
 
 	TaskTraverse(a, func(currentTask Task, level int) {
 		annotation := "unknown"
-		if anno, ok := statuses[currentTask.TaskName()]; ok {
-			annotation = anno.String()
+		if result, ok := results[currentTask.TaskName()]; ok {
+			annotation = result.State.String()
 		}
 		fmt.Printf("%s%s: %s\n", strings.Repeat(" ", level*2), currentTask.TaskName(), annotation)
 	})
@@ -129,4 +127,12 @@ func idempotentExample() {
 	fmt.Printf("dot graph after:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
 	fmt.Printf("list after:\n%s\n", TaskToGraphDump(a).RenderAsList(true))
+
+	jsonDump(results)
+}
+
+func jsonDump(obj interface{}) {
+	bytes, err := json.MarshalIndent(obj, "", "  ")
+	doOrDie(err)
+	fmt.Printf("%s\n\n", string(bytes))
 }

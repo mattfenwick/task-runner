@@ -9,10 +9,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func resultsToStatuses(results map[string]*task_runner.TaskRunResult) map[string]task_runner.TaskState {
+	states := map[string]task_runner.TaskState{}
+	for name, result := range results {
+		states[name] = result.State
+	}
+	return states
+}
+
 func RunSimpleTaskRunnerTests() {
 	Describe("TaskRunner", func() {
 		It("runs each not-done task exactly once", func() {
-			dict, t := SetKeyOnceGraph()
+			dict, t := SetKeyOnceGraph(0)
 
 			_, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 			Expect(err).To(Succeed())
@@ -27,7 +35,7 @@ func RunSimpleTaskRunnerTests() {
 
 			task_runner.TaskDebugPrint(rootTask)
 
-			statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(rootTask, false)
+			results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(rootTask, false)
 			Expect(err).To(Succeed())
 
 			for _, s := range []string{"a", "b", "c", "d"} {
@@ -39,17 +47,18 @@ func RunSimpleTaskRunnerTests() {
 			Expect(tasks).To(HaveKey("d-again"))
 			Expect(tasks["d-again"].RunCount).To(Equal(int64(0)))
 
-			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-a", task_runner.SimpleTaskRunnerTaskStateComplete))
-			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-b", task_runner.SimpleTaskRunnerTaskStateComplete))
-			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-c", task_runner.SimpleTaskRunnerTaskStateComplete))
-			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d", task_runner.SimpleTaskRunnerTaskStateComplete))
-			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d-again", task_runner.SimpleTaskRunnerTaskStateSkipped))
+			statuses := resultsToStatuses(results)
+			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-a", task_runner.TaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-b", task_runner.TaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-c", task_runner.TaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d", task_runner.TaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("RunCountTask-wrapper-task-setkeyidempotent-d-again", task_runner.TaskStateSkipped))
 		})
 
 		It("fails to execute tasks whose prereqs fail", func() {
 			dict, t := SetKeyTwicePrereqGraph()
 
-			statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
+			results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 			Expect(err).NotTo(Succeed())
 			Expect(err.Error()).To(MatchRegexp("prereq 'prereq-keycheck-task-setkey-d-again' failed for task task-setkey-d-again: key d already in dict"))
 
@@ -60,11 +69,12 @@ func RunSimpleTaskRunnerTests() {
 				Expect(dict).NotTo(HaveKey(s))
 			}
 
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-a", task_runner.SimpleTaskRunnerTaskStateWaiting))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-b", task_runner.SimpleTaskRunnerTaskStateWaiting))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-c", task_runner.SimpleTaskRunnerTaskStateWaiting))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-d", task_runner.SimpleTaskRunnerTaskStateComplete))
-			Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", task_runner.SimpleTaskRunnerTaskStateFailed))
+			statuses := resultsToStatuses(results)
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-a", task_runner.TaskStateWaiting))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-b", task_runner.TaskStateWaiting))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-c", task_runner.TaskStateWaiting))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-d", task_runner.TaskStateComplete))
+			Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", task_runner.TaskStateFailed))
 		})
 
 		It("fails to execute tasks whose IsDone fails", func() {
@@ -73,12 +83,13 @@ func RunSimpleTaskRunnerTests() {
 				return false, errors.Errorf(errorMessage)
 			})
 
-			statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
+			results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 
 			Expect(err).NotTo(Succeed())
 			Expect(err.Error()).To(MatchRegexp(errorMessage))
 
-			Expect(statuses).To(HaveKeyWithValue("task-isdone-failure", task_runner.SimpleTaskRunnerTaskStateFailed))
+			statuses := resultsToStatuses(results)
+			Expect(statuses).To(HaveKeyWithValue("task-isdone-failure", task_runner.TaskStateFailed))
 		})
 
 		runIsDoneFailureTask := func(name string, shouldError bool, deps ...task_runner.Task) task_runner.Task {
@@ -100,30 +111,32 @@ func RunSimpleTaskRunnerTests() {
 		It("fails after executing a task, if the post-IsDone check returns false", func() {
 			t := runIsDoneFailureTask("task-isdone-false", false)
 
-			statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
+			results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 
 			Expect(err).NotTo(Succeed())
 			Expect(err.Error()).To(MatchRegexp("ran task task-runIsDoneFailureTask-task-isdone-false but it still reports itself as not done"))
 
-			Expect(statuses).To(HaveKeyWithValue("task-runIsDoneFailureTask-task-isdone-false", task_runner.SimpleTaskRunnerTaskStateFailed))
+			statuses := resultsToStatuses(results)
+			Expect(statuses).To(HaveKeyWithValue("task-runIsDoneFailureTask-task-isdone-false", task_runner.TaskStateFailed))
 		})
 
 		It("fails after executing a task, if the post-IsDone check errors", func() {
 			t := runIsDoneFailureTask("task-isdone-false", true)
 
-			statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
+			results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 
 			Expect(err).NotTo(Succeed())
 			Expect(err.Error()).To(MatchRegexp("task task-runIsDoneFailureTask-task-isdone-false failed post-execution IsDone check: test error: predetermined IsDone failure"))
 
-			Expect(statuses).To(HaveKeyWithValue("task-runIsDoneFailureTask-task-isdone-false", task_runner.SimpleTaskRunnerTaskStateFailed))
+			statuses := resultsToStatuses(results)
+			Expect(statuses).To(HaveKeyWithValue("task-runIsDoneFailureTask-task-isdone-false", task_runner.TaskStateFailed))
 		})
 
 		Describe("Task failures", func() {
 			It("fails to execute tasks whose deps fail", func() {
 				dict, t := SetKeyTwiceGraph()
 
-				statuses, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
+				results, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 				Expect(err).NotTo(Succeed())
 				Expect(err.Error()).To(MatchRegexp("failed to run task task-setkey-d-again: key d already in dict"))
 
@@ -134,11 +147,12 @@ func RunSimpleTaskRunnerTests() {
 					Expect(dict).NotTo(HaveKey(s))
 				}
 
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-a", task_runner.SimpleTaskRunnerTaskStateWaiting))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-b", task_runner.SimpleTaskRunnerTaskStateWaiting))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-c", task_runner.SimpleTaskRunnerTaskStateWaiting))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", task_runner.SimpleTaskRunnerTaskStateFailed))
-				Expect(statuses).To(HaveKeyWithValue("task-setkey-d", task_runner.SimpleTaskRunnerTaskStateComplete))
+				statuses := resultsToStatuses(results)
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-a", task_runner.TaskStateWaiting))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-b", task_runner.TaskStateWaiting))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-c", task_runner.TaskStateWaiting))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-d-again", task_runner.TaskStateFailed))
+				Expect(statuses).To(HaveKeyWithValue("task-setkey-d", task_runner.TaskStateComplete))
 			})
 		})
 	})

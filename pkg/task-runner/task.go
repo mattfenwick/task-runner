@@ -112,3 +112,13 @@ func NewRunOnceTask(name string, run func() error, deps []Task, prereqs []Prereq
 		},
 	}
 }
+
+// NewNoopTask returns a RunOnceTask that doesn't do anything.  This can be used for grouping
+// tasks into dependency graphs in a convenient way.
+func NewNoopTask(name string, deps []Task) *FunctionTask {
+	return NewRunOnceTask(
+		name,
+		func() error { return nil },
+		deps,
+		[]Prereq{})
+}

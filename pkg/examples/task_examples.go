@@ -5,48 +5,40 @@ import (
 	"github.com/mattfenwick/task-runner/pkg/task-runner"
 	"github.com/pkg/errors"
 	"sync"
+	"time"
 )
 
-// PrintTask prints a string and marks itself as done.
+// PrintTask is a run-once-task that prints a string.
 func PrintTask(s string, deps ...task_runner.Task) task_runner.Task {
-	isDone := false
-	return task_runner.NewFunctionTask(s, func() error {
+	return task_runner.NewRunOnceTask(s, func() error {
 		fmt.Println(s)
-		isDone = true
 		return nil
-	}, deps, []task_runner.Prereq{}, func() (b bool, err error) {
-		return isDone, nil
-	})
+	}, deps, []task_runner.Prereq{})
 }
 
-// SetKeyTask sets a key in a map, then marks itself as done.
+// SetKeyTask is a run-once-task that sets a key in a map.
 // If the key is already set, it returns an error.
-// The purpose of this Task is to track whether it's been executed or not,
-// and to enforce that it is not executed more than once.
-func SetKeyTask(name string, key string, mux *sync.Mutex, dict map[string]bool, deps ...task_runner.Task) task_runner.Task {
-	isDone := false
-	return task_runner.NewFunctionTask(fmt.Sprintf("task-setkey-%s", name), func() error {
+func SetKeyTask(name string, key string, mux *sync.Mutex, dict map[string]bool, sleepSeconds int, deps ...task_runner.Task) task_runner.Task {
+	return task_runner.NewRunOnceTask(fmt.Sprintf("task-setkey-%s", name), func() error {
 		if _, ok := dict[key]; ok {
 			return errors.Errorf("key %s already in dict", key)
+		}
+		if sleepSeconds > 0 {
+			time.Sleep(time.Second * time.Duration(sleepSeconds))
 		}
 		mux.Lock()
 		dict[key] = true
 		mux.Unlock()
-		isDone = true
 		return nil
-	}, deps, []task_runner.Prereq{}, func() (b bool, err error) {
-		return isDone, nil
-	})
+	}, deps, []task_runner.Prereq{})
 }
 
 // SetKeyTaskPrereq is similar to SetKeyTask, but moves the 'key is already set?' check
 // into a prereq.
 func SetKeyTaskPrereq(name string, key string, dict map[string]bool, deps ...task_runner.Task) task_runner.Task {
-	isDone := false
 	taskName := fmt.Sprintf("task-setkey-%s", name)
-	return task_runner.NewFunctionTask(taskName, func() error {
+	return task_runner.NewRunOnceTask(taskName, func() error {
 		dict[key] = true
-		isDone = true
 		return nil
 	}, deps, []task_runner.Prereq{
 		&task_runner.FunctionPrereq{
@@ -58,8 +50,6 @@ func SetKeyTaskPrereq(name string, key string, dict map[string]bool, deps ...tas
 				return nil
 			},
 		},
-	}, func() (b bool, err error) {
-		return isDone, nil
 	})
 }
 
