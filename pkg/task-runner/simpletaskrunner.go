@@ -54,7 +54,8 @@ func (tr *SimpleTaskRunner) TaskRunnerRun(task Task, runAllPrereqsImmediately bo
 	for _, task := range taskOrder {
 		startTime := time.Now()
 		state, err := tr.runTask(task)
-		taskResults[task.TaskName()].Duration = time.Since(startTime)
+		taskResults[task.TaskName()].Finish = time.Now()
+		taskResults[task.TaskName()].Start = startTime
 		taskResults[task.TaskName()].State = state
 		if err != nil {
 			return taskResults, err
