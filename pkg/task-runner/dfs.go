@@ -73,7 +73,7 @@ ForLoop:
 		if err != nil {
 			panic(err)
 		}
-		log.Debugf("stack: %s", stackBytes)
+		log.Tracef("stack: %s", stackBytes)
 
 		// Pop the stack and get the next task name
 		top := stack[n-1]
