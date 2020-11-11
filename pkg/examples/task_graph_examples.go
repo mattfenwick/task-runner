@@ -30,19 +30,19 @@ func NonTrivialCycleGraph() task_runner.Task {
 	return a
 }
 
-func SetKeyOnceGraph() (map[string]bool, task_runner.Task) {
+func SetKeyOnceGraph(sleepSeconds int) (map[string]bool, task_runner.Task) {
 	ran := map[string]bool{}
 	mux := &sync.Mutex{}
 	/*
 		a -> b -> d -> e
-		a -> c
+		a -> c -> d
 		a -> d
 	*/
-	d := SetKeyTask("d", "d", mux, ran,
-		SetKeyTask("e", "e", mux, ran))
-	a := SetKeyTask("a", "a", mux, ran,
-		SetKeyTask("b", "b", mux, ran, d),
-		SetKeyTask("c", "c", mux, ran),
+	d := SetKeyTask("d", "d", mux, ran, sleepSeconds,
+		SetKeyTask("e", "e", mux, ran, sleepSeconds))
+	a := SetKeyTask("a", "a", mux, ran, sleepSeconds,
+		SetKeyTask("b", "b", mux, ran, sleepSeconds, d),
+		SetKeyTask("c", "c", mux, ran, sleepSeconds, d),
 		d)
 	return ran, a
 }
@@ -70,11 +70,11 @@ func SetKeyCountGraph() (map[string]bool, map[string]*RunCountTask, task_runner.
 func SetKeyTwiceGraph() (map[string]bool, task_runner.Task) {
 	ran := map[string]bool{}
 	mux := &sync.Mutex{}
-	dAgain := SetKeyTask("d-again", "d", mux, ran,
-		SetKeyTask("d", "d", mux, ran))
-	a := SetKeyTask("a", "a", mux, ran,
-		SetKeyTask("b", "b", mux, ran, dAgain),
-		SetKeyTask("c", "c", mux, ran, dAgain),
+	dAgain := SetKeyTask("d-again", "d", mux, ran, 0,
+		SetKeyTask("d", "d", mux, ran, 0))
+	a := SetKeyTask("a", "a", mux, ran, 0,
+		SetKeyTask("b", "b", mux, ran, 0, dAgain),
+		SetKeyTask("c", "c", mux, ran, 0, dAgain),
 		dAgain)
 	return ran, a
 }

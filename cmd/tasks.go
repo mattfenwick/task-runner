@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/mattfenwick/task-runner/pkg/examples"
 	. "github.com/mattfenwick/task-runner/pkg/task-runner"
@@ -126,4 +127,12 @@ func idempotentExample() {
 	fmt.Printf("dot graph after:\n%s\n", TaskToGraphDump(a).RenderAsDot(true))
 
 	fmt.Printf("list after:\n%s\n", TaskToGraphDump(a).RenderAsList(true))
+
+	jsonDump(results)
+}
+
+func jsonDump(obj interface{}) {
+	bytes, err := json.MarshalIndent(obj, "", "  ")
+	doOrDie(err)
+	fmt.Printf("%s\n\n", string(bytes))
 }

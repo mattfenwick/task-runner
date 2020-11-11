@@ -20,7 +20,7 @@ func resultsToStatuses(results map[string]*task_runner.TaskRunResult) map[string
 func RunSimpleTaskRunnerTests() {
 	Describe("TaskRunner", func() {
 		It("runs each not-done task exactly once", func() {
-			dict, t := SetKeyOnceGraph()
+			dict, t := SetKeyOnceGraph(0)
 
 			_, err := (&task_runner.SimpleTaskRunner{}).TaskRunnerRun(t, false)
 			Expect(err).To(Succeed())

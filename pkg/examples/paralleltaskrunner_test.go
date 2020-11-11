@@ -2,18 +2,20 @@ package examples
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	tr "github.com/mattfenwick/task-runner/pkg/task-runner"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 func RunParallelTaskRunnerTests() {
 	Describe("ParallelTaskRunner", func() {
 		It("runs each not-done task exactly once", func() {
-			dict, t := SetKeyOnceGraph()
+			dict, t := SetKeyOnceGraph(0)
 
 			runner, err := tr.NewDefaultParallelTaskRunner(t, 2)
 			Expect(err).To(Succeed())
@@ -127,7 +129,7 @@ func RunParallelTaskRunnerTests() {
 
 				runner, err := tr.NewParallelTaskRunner(t, 2, 100)
 				Expect(err).To(Succeed())
-				_ = runner.Wait(context.TODO())
+				results := runner.Wait(context.TODO())
 
 				// only d runs
 				Expect(dict).To(HaveKeyWithValue("d", true))
@@ -136,11 +138,58 @@ func RunParallelTaskRunnerTests() {
 					Expect(dict).NotTo(HaveKey(s))
 				}
 
-				Expect(runner.Tasks["task-setkey-a"].State).To(Equal(tr.TaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-b"].State).To(Equal(tr.TaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-c"].State).To(Equal(tr.TaskStateWaiting))
-				Expect(runner.Tasks["task-setkey-d"].State).To(Equal(tr.TaskStateComplete))
-				Expect(runner.Tasks["task-setkey-d-again"].State).To(Equal(tr.TaskStateFailed))
+				Expect(results["task-setkey-a"].State).To(Equal(tr.TaskStateWaiting))
+				Expect(results["task-setkey-b"].State).To(Equal(tr.TaskStateWaiting))
+				Expect(results["task-setkey-c"].State).To(Equal(tr.TaskStateWaiting))
+				Expect(results["task-setkey-d"].State).To(Equal(tr.TaskStateComplete))
+				Expect(results["task-setkey-d-again"].State).To(Equal(tr.TaskStateFailed))
+			})
+		})
+
+		Describe("Durations", func() {
+			It("Records start, finish and durations properly", func() {
+				_, t := SetKeyOnceGraph(1)
+				runner, err := tr.NewParallelTaskRunner(t, 3, 100)
+				Expect(err).To(Succeed())
+				results := runner.Wait(context.TODO())
+
+				for _, task := range results {
+					Expect(task.Duration().Seconds()).Should(BeNumerically("~", 1, 0.1))
+				}
+			})
+		})
+
+		Describe("Stop runner while executing", func() {
+			It("Should finish off currently executing tasks, but not start any new ones", func() {
+				dict, t := SetKeyOnceGraph(5)
+				runner, err := tr.NewParallelTaskRunner(t, 3, 100)
+				Expect(err).To(Succeed())
+				go func() {
+					defer GinkgoRecover()
+					time.Sleep(2500 * time.Millisecond)
+					Expect(runner.Stop()).To(Succeed())
+				}()
+				results := runner.Wait(context.TODO())
+
+				time.Sleep(7500 * time.Millisecond)
+
+				bytes, err := json.MarshalIndent(results, "", "  ")
+				Expect(err).To(Succeed())
+				fmt.Printf("%s\n\n", string(bytes))
+
+				// only e runs
+				Expect(dict).To(HaveKeyWithValue("e", true))
+				// a,b,c are not done before cancellation
+				for _, s := range []string{"a", "b", "c"} {
+					Expect(dict).NotTo(HaveKey(s))
+					Expect(results[fmt.Sprintf("task-setkey-%s", s)].State).To(Equal(tr.TaskStateWaiting))
+				}
+				// d is also not done, but is ready
+				Expect(dict).NotTo(HaveKey("d"))
+				Expect(results["task-setkey-d"].State).To(Equal(tr.TaskStateReady))
+
+				Expect(results["task-setkey-e"].State).Should(Equal(tr.TaskStateComplete))
+				Expect(results["task-setkey-e"].Duration().Seconds()).Should(BeNumerically("~", 5, 0.1))
 			})
 		})
 	})

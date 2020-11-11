@@ -40,7 +40,6 @@ type ParallelTaskRunner struct {
 	stopChan        chan struct{}
 	actions         chan func()
 	readyTasks      chan string
-	didFinish       chan struct{}
 	enqueuedTasks   map[string]bool
 	inprogressTasks map[string]bool
 }
@@ -57,7 +56,6 @@ func NewParallelTaskRunner(task Task, concurrency int, queueSize int) (*Parallel
 		stopChan:        make(chan struct{}),
 		actions:         make(chan func()),
 		readyTasks:      make(chan string, queueSize),
-		didFinish:       make(chan struct{}),
 		enqueuedTasks:   map[string]bool{},
 		inprogressTasks: map[string]bool{},
 	}
@@ -67,11 +65,15 @@ func NewParallelTaskRunner(task Task, concurrency int, queueSize int) (*Parallel
 	}
 
 	go func() {
+		log.Debugf("starting ParallelTaskRunner action processor")
 		for {
 			var action func()
 			select {
-			case <-runner.stopChan:
-				return
+			// TODO this goroutine is potentially leaked -- the problem is, if stopped, how to wait for
+			//   every in-progress task to finish before exiting this goroutine?
+			//case <-runner.stopChan:
+			//	log.Debugf("stopping ParallelTaskRunner action processor")
+			//	return
 			case action = <-runner.actions:
 			}
 
@@ -93,7 +95,7 @@ func (runner *ParallelTaskRunner) Wait(ctx context.Context) map[string]*RunnerTa
 	select {
 	case <-ctx.Done():
 		return nil
-	case <-runner.didFinish:
+	case <-runner.stopChan:
 	}
 	return runner.Tasks
 }
@@ -105,7 +107,7 @@ func (runner *ParallelTaskRunner) addTask(task Task) error {
 	if err != nil {
 		return err
 	}
-	// 2. if everything checks out -- then add the new stuff
+	// 2. add in the tasks
 	for name, runnerTask := range tasks {
 		runner.Tasks[name] = runnerTask
 		// no upstream dependencies?  ready to execute, queue it up!
@@ -119,10 +121,12 @@ func (runner *ParallelTaskRunner) addTask(task Task) error {
 
 func (runner *ParallelTaskRunner) createWorker() {
 	go func() {
+		log.Debugf("starting ParallelTaskRunner worker")
 		for {
 			var taskName string
 			select {
 			case <-runner.stopChan:
+				log.Debugf("stopping ParallelTaskRunner worker")
 				return
 			case taskName = <-runner.readyTasks:
 			}
@@ -189,7 +193,8 @@ func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state Tas
 		}
 
 		if len(runner.inprogressTasks) == 0 && len(runner.enqueuedTasks) == 0 {
-			close(runner.didFinish)
+			runner.State = ParallelTaskRunnerStateFinished
+			close(runner.stopChan)
 		}
 
 		wg.Done()
