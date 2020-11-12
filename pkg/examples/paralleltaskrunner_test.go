@@ -179,14 +179,11 @@ func RunParallelTaskRunnerTests() {
 
 				// only e runs
 				Expect(dict).To(HaveKeyWithValue("e", true))
-				// a,b,c are not done before cancellation
-				for _, s := range []string{"a", "b", "c"} {
+				// a,b,c,d are not done before cancellation
+				for _, s := range []string{"a", "b", "c", "d"} {
 					Expect(dict).NotTo(HaveKey(s))
 					Expect(results[fmt.Sprintf("task-setkey-%s", s)].State).To(Equal(tr.TaskStateWaiting))
 				}
-				// d is also not done, but is ready
-				Expect(dict).NotTo(HaveKey("d"))
-				Expect(results["task-setkey-d"].State).To(Equal(tr.TaskStateReady))
 
 				Expect(results["task-setkey-e"].State).Should(Equal(tr.TaskStateComplete))
 				Expect(results["task-setkey-e"].Duration().Seconds()).Should(BeNumerically("~", 5, 0.1))

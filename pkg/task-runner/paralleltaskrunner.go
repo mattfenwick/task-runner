@@ -179,22 +179,24 @@ func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state Tas
 		runnerTask.Start = start
 		runnerTask.Finish = finish
 
-		if state == TaskStateComplete || state == TaskStateSkipped {
-			for downstreamName := range runnerTask.DownstreamDeps {
-				downstream := runner.Tasks[downstreamName]
-				delete(downstream.UpstreamDeps, taskName)
-				if len(downstream.UpstreamDeps) == 0 {
-					if downstream.State != TaskStateWaiting {
-						panic(errors.Errorf("expected state Waiting for task %s, found %s", downstreamName, downstream.State.String()))
+		if runner.State == ParallelTaskRunnerStateRunning {
+			if state == TaskStateComplete || state == TaskStateSkipped {
+				for downstreamName := range runnerTask.DownstreamDeps {
+					downstream := runner.Tasks[downstreamName]
+					delete(downstream.UpstreamDeps, taskName)
+					if len(downstream.UpstreamDeps) == 0 {
+						if downstream.State != TaskStateWaiting {
+							panic(errors.Errorf("expected state Waiting for task %s, found %s", downstreamName, downstream.State.String()))
+						}
+						runner.setTaskState(downstream, TaskStateReady)
 					}
-					runner.setTaskState(downstream, TaskStateReady)
 				}
 			}
-		}
 
-		if len(runner.inprogressTasks) == 0 && len(runner.enqueuedTasks) == 0 {
-			runner.State = ParallelTaskRunnerStateFinished
-			close(runner.stopChan)
+			if len(runner.inprogressTasks) == 0 && len(runner.enqueuedTasks) == 0 {
+				runner.State = ParallelTaskRunnerStateFinished
+				close(runner.stopChan)
+			}
 		}
 
 		wg.Done()
