@@ -15,5 +15,6 @@ func TestPkg(t *testing.T) {
 	RunDfsTests()
 	RunSimpleTaskRunnerTests()
 	RunParallelTaskRunnerTests()
+	RunTraversalsTests()
 	RunSpecs(t, "task-runner")
 }

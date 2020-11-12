@@ -6,11 +6,17 @@ import (
 	"strings"
 )
 
-func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
-	log.Tracef("traversing task %s at depth %d", currentTask.TaskName(), depth)
+func traverseHelp(visited map[string]bool, currentTask Task, depth int, f func(Task, int)) {
+	name := currentTask.TaskName()
+	if visited[name] {
+		log.Debugf("skipping traversal of task %s, already visited", name)
+		return
+	}
+	log.Debugf("traversing task %s at depth %d", name, depth)
 	f(currentTask, depth)
+	visited[name] = true
 	for _, dep := range currentTask.TaskDependencies() {
-		traverseHelp(dep, depth+1, f)
+		traverseHelp(visited, dep, depth+1, f)
 	}
 }
 
@@ -18,7 +24,7 @@ func traverseHelp(currentTask Task, depth int, f func(Task, int)) {
 //   TODO add support for dupe/cycle detection?
 func TaskTraverse(t Task, f func(currentTask Task, depth int)) {
 	log.Debugf("starting traversal of task %s", t.TaskName())
-	traverseHelp(t, 0, f)
+	traverseHelp(map[string]bool{}, t, 0, f)
 }
 
 func TaskDebugPrint(rootTask Task) {
