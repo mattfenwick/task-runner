@@ -12,7 +12,7 @@ import (
     eg "github.com/mattfenwick/task-runner/pkg/examples"
     tr "github.com/mattfenwick/task-runner/pkg/task-runner"
 
-	"github.com/goccy/go-graphviz"
+    "github.com/goccy/go-graphviz"
     "github.com/goccy/go-graphviz/cgraph"
     "github.com/pkg/errors"
     log "github.com/sirupsen/logrus"
