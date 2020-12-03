@@ -246,6 +246,7 @@ func RunParallelTaskRunnerTests() {
 				for _, s := range []string{"a", "b", "c", "d"} {
 					Expect(results).To(HaveKey(s))
 					Expect(results[s].State).To(Equal(tr.TaskStateFailed))
+					fmt.Printf("%s: %s\n", s, results[s].Error.Error())
 				}
 			})
 		})
