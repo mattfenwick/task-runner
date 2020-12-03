@@ -64,22 +64,21 @@ func (ft *FunctionTask) TaskAddDependency(dep Task) {
 }
 
 func (ft *FunctionTask) TaskJSONObject() map[string]interface{} {
-	var deps []interface{}
+	var deps []string
 	for _, dep := range ft.Deps {
-		deps = append(deps, dep.TaskJSONObject())
+		deps = append(deps, dep.TaskName())
 	}
 	var prereqs []string
 	for _, p := range ft.Prereqs {
 		prereqs = append(prereqs, p.PrereqName())
 	}
-	dict := map[string]interface{}{
+	return map[string]interface{}{
 		"Run":          "[function]",
 		"Dependencies": deps,
 		"IsDone":       "[function]",
 		"Prereqs":      prereqs,
 		"Name":         ft.Name,
 	}
-	return dict
 }
 
 func (ft *FunctionTask) MarshalJSON() ([]byte, error) {

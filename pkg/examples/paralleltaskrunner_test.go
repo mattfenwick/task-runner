@@ -189,5 +189,66 @@ func RunParallelTaskRunnerTests() {
 				Expect(results["task-setkey-e"].Duration().Seconds()).Should(BeNumerically("~", 5, 0.1))
 			})
 		})
+
+		Describe("Error recording and handling", func() {
+			It("Errors hit at any stage of Task processing are attached to RunnerTask", func() {
+				a := tr.NewFunctionTask("a", func() error {
+					time.Sleep(2500 * time.Millisecond)
+					return errors.Errorf("a failed")
+				}, []tr.Task{}, []tr.Prereq{}, func() (bool, error) {
+					return false, nil
+				})
+				b := tr.NewFunctionTask("b", func() error {
+					return nil
+				}, []tr.Task{}, []tr.Prereq{}, func() (bool, error) {
+					time.Sleep(2500 * time.Millisecond)
+					return false, errors.Errorf("b isDone before failed")
+				})
+				cIsDone := false
+				c := tr.NewFunctionTask("c", func() error {
+					cIsDone = true
+					return nil
+				}, []tr.Task{}, []tr.Prereq{}, func() (bool, error) {
+					if !cIsDone {
+						return false, nil
+					}
+					time.Sleep(2500 * time.Millisecond)
+					return false, errors.Errorf("c isDone after failed")
+				})
+				dIsDone := false
+				d := tr.NewFunctionTask("d", func() error {
+					dIsDone = true
+					return nil
+				}, []tr.Task{}, []tr.Prereq{&tr.FunctionPrereq{
+					Name: "d-prereq",
+					Run: func() error {
+						time.Sleep(2500 * time.Millisecond)
+						return errors.Errorf("d prereq failed")
+					},
+				}}, func() (bool, error) {
+					return dIsDone, nil
+				})
+				group := tr.NewNoopTask("group", []tr.Task{a, b, c, d})
+
+				runner, err := tr.NewParallelTaskRunner(group, 5, 100)
+				Expect(err).To(Succeed())
+
+				time.Sleep(5 * time.Second)
+				runner.Stop() // ignore error
+				results := runner.Wait(context.TODO())
+
+				bytes, err := json.MarshalIndent(results, "", "  ")
+				Expect(err).To(Succeed())
+				fmt.Printf("%s\n\n", string(bytes))
+
+				Expect(results).To(HaveKey("group"))
+				// a,b,c,d all failed
+				for _, s := range []string{"a", "b", "c", "d"} {
+					Expect(results).To(HaveKey(s))
+					Expect(results[s].State).To(Equal(tr.TaskStateFailed))
+					fmt.Printf("%s: %s\n", s, results[s].Error.Error())
+				}
+			})
+		})
 	})
 }

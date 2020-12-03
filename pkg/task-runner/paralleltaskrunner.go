@@ -14,6 +14,7 @@ type RunnerTask struct {
 	Id     string
 	Start  time.Time
 	Finish time.Time
+	Error  error
 	// UpstreamDeps: what unfinished tasks do I depend on?
 	// When the number of UpstreamDeps goes to 0, the Task is ready to run and is added to the `Ready` queue.
 	UpstreamDeps map[string]bool
@@ -161,7 +162,6 @@ func (runner *ParallelTaskRunner) startTaskAction(taskName string) Task {
 
 func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state TaskState, err error, start time.Time, finish time.Time) {
 	if err != nil {
-		// TODO anything else to do here?
 		log.Errorf("failed to run task %s: %+v", taskName, err)
 	} else {
 		if !(state == TaskStateSkipped || state == TaskStateComplete) {
@@ -169,8 +169,6 @@ func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state Tas
 		}
 	}
 
-	// Any tasks that depend on this one, now have one less dependency blocking their execution.
-	// If anything gets down to 0, queue it up!
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	runner.actions <- func() {
@@ -178,8 +176,11 @@ func (runner *ParallelTaskRunner) didFinishTaskAction(taskName string, state Tas
 		runner.setTaskState(runnerTask, state)
 		runnerTask.Start = start
 		runnerTask.Finish = finish
+		runnerTask.Error = err
 
 		if runner.State == ParallelTaskRunnerStateRunning {
+			// Any tasks that depend on this one, now have one less dependency blocking their execution.
+			// If anything gets down to 0, queue it up!
 			if state == TaskStateComplete || state == TaskStateSkipped {
 				for downstreamName := range runnerTask.DownstreamDeps {
 					downstream := runner.Tasks[downstreamName]
@@ -229,7 +230,7 @@ func runTaskHelper(task Task) (TaskState, error) {
 	// If a task is already done, then don't run it.
 	isDone, err := task.TaskIsDone()
 	if err != nil {
-		return TaskStateFailed, err
+		return TaskStateFailed, errors.WithMessagef(err, "task %s pre-execution IsDone check", taskName)
 	}
 	if isDone {
 		log.Debugf("skipping task %s, already done", taskName)
@@ -256,7 +257,7 @@ func runTaskHelper(task Task) (TaskState, error) {
 	// After running a task, make sure that it considers itself to be done.
 	isDone, err = task.TaskIsDone()
 	if err != nil {
-		return TaskStateFailed, errors.WithMessagef(err, "task %s failed post-execution IsDone check", taskName)
+		return TaskStateFailed, errors.WithMessagef(err, "task %s post-execution IsDone check", taskName)
 	}
 	if !isDone {
 		return TaskStateFailed, errors.Errorf("ran task %s but it still reports itself as not done", taskName)
