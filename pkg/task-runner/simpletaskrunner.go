@@ -105,8 +105,8 @@ func (tr *SimpleTaskRunner) runTask(task Task) (TaskState, error) {
 }
 
 func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress map[string]bool, stack []string, taskNamesToIds map[string]string) ([]Task, error) {
-	log.Debugf("stack: %+v", stack)
-	log.Debugf("ids: %+v", taskNamesToIds)
+	log.Tracef("stack: %+v", stack)
+	log.Tracef("ids: %+v", taskNamesToIds)
 
 	name := task.TaskName()
 
@@ -129,9 +129,9 @@ func linearizeHelp(task Task, traversal []Task, done map[string]bool, inProgress
 	//   a -> c
 	//   Since a and b both depend on c, we'll traverse c twice.  The first time c is hit, we need to process it.
 	//   Subsequent times, just ignore it.  Note: this doesn't mean there's a cycle.
-	log.Debugf("handling %s\n", name)
+	log.Tracef("handling %s\n", name)
 	if done[name] {
-		log.Debugf("bailing on %s\n", name)
+		log.Tracef("bailing on %s\n", name)
 		return traversal, nil
 	}
 
