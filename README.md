@@ -3,7 +3,7 @@ A pure golang task runner
 
 ## Examples
 
-Convert a task graph to a [Dot format image](https://en.wikipedia.org/wiki/DOT_(graph_description_language):
+Convert a task graph to a [Dot format image](https://en.wikipedia.org/wiki/DOT_(graph_description_language)):
 
 ```go
 package main
