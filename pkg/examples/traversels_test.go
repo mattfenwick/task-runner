@@ -2,7 +2,7 @@ package examples
 
 import (
 	tr "github.com/mattfenwick/task-runner/pkg/task-runner"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
